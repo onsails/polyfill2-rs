@@ -2289,6 +2289,44 @@ impl ClobClient {
             .map_err(|e| PolyfillError::parse(format!("Failed to parse response: {}", e), None))
     }
 
+    /// Get RFQ configuration from the server.
+    ///
+    /// Returns server-defined RFQ parameters (schema subject to change, so the
+    /// result is an opaque JSON value). Requires L2 authentication.
+    pub async fn get_rfq_config(&self) -> Result<Value> {
+        let signer = self
+            .signer
+            .as_ref()
+            .ok_or_else(|| PolyfillError::auth("Signer not set"))?;
+        let api_creds = self
+            .api_creds
+            .as_ref()
+            .ok_or_else(|| PolyfillError::auth("API credentials not set"))?;
+
+        let method = Method::GET;
+        let endpoint = "/rfq/config";
+        let headers =
+            create_l2_headers::<Value>(signer, api_creds, method.as_str(), endpoint, None)?;
+
+        let response = self
+            .create_request_with_headers(method, endpoint, headers.into_iter())
+            .send()
+            .await
+            .map_err(|e| PolyfillError::network(format!("Request failed: {}", e), e))?;
+
+        if !response.status().is_success() {
+            return Err(PolyfillError::api(
+                response.status().as_u16(),
+                "Failed to get RFQ config",
+            ));
+        }
+
+        response
+            .json()
+            .await
+            .map_err(|e| PolyfillError::parse(format!("Failed to parse response: {}", e), None))
+    }
+
     /// Get sampling markets with pagination
     pub async fn get_sampling_markets(
         &self,
@@ -3539,6 +3577,15 @@ mod tests {
             .create_async()
             .await;
 
+        // get_rfq_config
+        let rfq_config_mock = server
+            .mock("GET", "/rfq/config")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"fee_rate_bps": 100, "min_size": "0.01"}"#)
+            .create_async()
+            .await;
+
         // approve_rfq_order
         let approve_mock = server
             .mock("POST", "/rfq/quote/approve")
@@ -3629,5 +3676,10 @@ mod tests {
         let approved = client.approve_rfq_order(&exec).await.unwrap();
         assert_eq!(approved.trade_ids, vec!["t1".to_string(), "t2".to_string()]);
         approve_mock.assert_async().await;
+
+        let rfq_config = client.get_rfq_config().await.unwrap();
+        assert_eq!(rfq_config["fee_rate_bps"], 100);
+        assert_eq!(rfq_config["min_size"], "0.01");
+        rfq_config_mock.assert_async().await;
     }
 }
