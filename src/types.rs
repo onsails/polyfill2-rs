@@ -215,6 +215,10 @@ pub enum TradeMessageStatus {
     Mined,
     #[serde(alias = "confirmed", alias = "CONFIRMED")]
     Confirmed,
+    #[serde(alias = "retrying", alias = "RETRYING")]
+    Retrying,
+    #[serde(alias = "failed", alias = "FAILED")]
+    Failed,
     /// Forward-compatible catch-all for unknown statuses.
     #[serde(untagged)]
     Unknown(String),
@@ -1017,6 +1021,9 @@ pub struct TradeMessage {
     /// Whether user was maker or taker.
     #[serde(default)]
     pub trader_side: Option<TraderSide>,
+    /// Batch-trade bucket index (AsyncAPI v2).
+    #[serde(default)]
+    pub bucket_index: Option<u32>,
 }
 
 /// User order update message.
@@ -1027,6 +1034,7 @@ pub struct OrderMessage {
     pub asset_id: String,
     pub side: Side,
     pub price: Decimal,
+    /// Event type: PLACEMENT, UPDATE, CANCELLATION.
     #[serde(rename = "type", default)]
     pub msg_type: Option<String>,
     #[serde(
@@ -1048,6 +1056,29 @@ pub struct OrderMessage {
     pub associate_trades: Option<Vec<String>>,
     #[serde(default)]
     pub status: Option<String>,
+
+    // ── added to match AsyncAPI v2 user channel OrderEvent ─────────────────
+    /// API key of the order owner (required per AsyncAPI, but tolerate absence).
+    #[serde(default)]
+    pub owner: Option<String>,
+    /// Alias spelling sometimes emitted by server.
+    #[serde(default)]
+    pub order_owner: Option<String>,
+    /// Outcome label (e.g. "Yes" / "No").
+    #[serde(default)]
+    pub outcome: Option<String>,
+    /// Server-side creation timestamp (string).
+    #[serde(default)]
+    pub created_at: Option<String>,
+    /// Expiration unix seconds (string).
+    #[serde(default)]
+    pub expiration: Option<String>,
+    /// Order execution type — GTC / GTD / FOK / FAK.
+    #[serde(default)]
+    pub order_type: Option<String>,
+    /// Maker address for the order.
+    #[serde(default)]
+    pub maker_address: Option<String>,
 }
 
 /// Subscription parameters for streaming
@@ -1894,7 +1925,9 @@ pub type OrderArgs = OrderRequest;
 
 #[cfg(test)]
 mod tests {
-    use super::{OrderType, PostOrder, SignedOrderRequest};
+    use super::{
+        OrderMessage, OrderType, PostOrder, SignedOrderRequest, TradeMessage, TradeMessageStatus,
+    };
 
     #[test]
     fn test_order_type_fak_serde_and_string() {
@@ -1989,5 +2022,71 @@ mod tests {
         let body = PostOrder::new(order, "o".to_string(), OrderType::GTC).with_flags(true, true);
         assert!(body.post_only);
         assert!(body.defer_exec);
+    }
+
+    #[test]
+    fn test_trade_message_status_retrying_failed() {
+        // AsyncAPI canonical uppercase
+        let s: TradeMessageStatus = serde_json::from_str("\"RETRYING\"").unwrap();
+        assert_eq!(s, TradeMessageStatus::Retrying);
+
+        let s: TradeMessageStatus = serde_json::from_str("\"FAILED\"").unwrap();
+        assert_eq!(s, TradeMessageStatus::Failed);
+
+        // lowercase aliases should also deserialize
+        let s: TradeMessageStatus = serde_json::from_str("\"retrying\"").unwrap();
+        assert_eq!(s, TradeMessageStatus::Retrying);
+
+        let s: TradeMessageStatus = serde_json::from_str("\"failed\"").unwrap();
+        assert_eq!(s, TradeMessageStatus::Failed);
+    }
+
+    #[test]
+    fn test_trade_message_with_bucket_index() {
+        let json_with = serde_json::json!({
+            "id": "t1",
+            "market": "0xmkt",
+            "asset_id": "123",
+            "side": "BUY",
+            "size": "1.0",
+            "price": "0.5",
+            "bucket_index": 42
+        });
+        let tm: TradeMessage = serde_json::from_value(json_with).unwrap();
+        assert_eq!(tm.bucket_index, Some(42));
+
+        let json_without = serde_json::json!({
+            "id": "t2",
+            "market": "0xmkt",
+            "asset_id": "123",
+            "side": "BUY",
+            "size": "1.0",
+            "price": "0.5"
+        });
+        let tm: TradeMessage = serde_json::from_value(json_without).unwrap();
+        assert_eq!(tm.bucket_index, None);
+    }
+
+    #[test]
+    fn test_order_message_v2_fields() {
+        let json = serde_json::json!({
+            "id": "o1",
+            "market": "0xmkt",
+            "asset_id": "123",
+            "side": "BUY",
+            "price": "0.5",
+            "owner": "owner-uuid",
+            "expiration": "1700000000",
+            "order_type": "GTD",
+            "maker_address": "0xabc0000000000000000000000000000000000001"
+        });
+        let om: OrderMessage = serde_json::from_value(json).unwrap();
+        assert_eq!(om.owner.as_deref(), Some("owner-uuid"));
+        assert_eq!(om.expiration.as_deref(), Some("1700000000"));
+        assert_eq!(om.order_type.as_deref(), Some("GTD"));
+        assert_eq!(
+            om.maker_address.as_deref(),
+            Some("0xabc0000000000000000000000000000000000001")
+        );
     }
 }
