@@ -75,6 +75,11 @@ env_logger = "0.10"
 default = ["stream"]
 stream = ["tokio-tungstenite"]
 side-by-side-benchmark = []
+# Opt-in feature that enables network integration tests against
+# clob-v2.polymarket.com staging. Not part of `default` — run with
+# `cargo test --features integration-v2 --test integration_v2` or
+# `cargo test --all-features --test integration_v2`.
+integration-v2 = []
 
 [[example]]
 name = "side_by_side_benchmark"
