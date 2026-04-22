@@ -36,21 +36,20 @@ sol! {
     }
 }
 
-// EIP-712 struct for order signing
+// EIP-712 struct for order signing (V2)
 sol! {
     struct Order {
         uint256 salt;
         address maker;
         address signer;
-        address taker;
         uint256 tokenId;
         uint256 makerAmount;
         uint256 takerAmount;
-        uint256 expiration;
-        uint256 nonce;
-        uint256 feeRateBps;
         uint8 side;
         uint8 signatureType;
+        uint256 timestamp;
+        bytes32 metadata;
+        bytes32 builder;
     }
 }
 
@@ -100,7 +99,7 @@ pub fn sign_order_message(
 ) -> Result<String> {
     let domain = eip712_domain!(
         name: "Polymarket CTF Exchange",
-        version: "1",
+        version: "2",
         chain_id: chain_id,
         verifying_contract: verifying_contract,
     );
@@ -380,5 +379,32 @@ mod tests {
         // Should be reasonable current time (after 2020, before 2030)
         assert!(ts1 > 1_600_000_000);
         assert!(ts1 < 1_900_000_000);
+    }
+
+    #[test]
+    fn v2_order_typehash_matches_ts_reference() {
+        use alloy_primitives::{keccak256, B256};
+        use alloy_sol_types::SolStruct;
+
+        // Single-line literal: `keccak256` input must contain zero whitespace.
+        let expected = keccak256(
+            "Order(uint256 salt,address maker,address signer,uint256 tokenId,uint256 makerAmount,uint256 takerAmount,uint8 side,uint8 signatureType,uint256 timestamp,bytes32 metadata,bytes32 builder)",
+        );
+
+        let dummy = Order {
+            salt: U256::ZERO,
+            maker: Address::ZERO,
+            signer: Address::ZERO,
+            tokenId: U256::ZERO,
+            makerAmount: U256::ZERO,
+            takerAmount: U256::ZERO,
+            side: 0,
+            signatureType: 0,
+            timestamp: U256::ZERO,
+            metadata: B256::ZERO,
+            builder: B256::ZERO,
+        };
+
+        assert_eq!(dummy.eip712_type_hash(), expected);
     }
 }

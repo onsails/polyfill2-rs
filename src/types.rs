@@ -3,7 +3,7 @@
 //! This module defines all the stable public types used throughout the client.
 //! These types are optimized for latency-sensitive trading environments.
 
-use alloy_primitives::{Address, U256};
+use alloy_primitives::{Address, B256};
 use chrono::{DateTime, Utc};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
@@ -549,20 +549,20 @@ pub struct OrderOptions {
     pub fee_rate_bps: Option<u32>,
 }
 
-/// Extra arguments for order creation
+/// Extra arguments for order creation (V2).
 #[derive(Debug, Clone)]
 pub struct ExtraOrderArgs {
-    pub fee_rate_bps: u32,
-    pub nonce: U256,
-    pub taker: String,
+    /// Optional 32-byte metadata attached to the signed order.
+    pub metadata: B256,
+    /// Optional 32-byte builder code for revenue attribution.
+    pub builder: B256,
 }
 
 impl Default for ExtraOrderArgs {
     fn default() -> Self {
         Self {
-            fee_rate_bps: 0,
-            nonce: U256::ZERO,
-            taker: "0x0000000000000000000000000000000000000000".to_string(),
+            metadata: B256::ZERO,
+            builder: B256::ZERO,
         }
     }
 }
@@ -576,22 +576,24 @@ pub struct MarketOrderArgs {
     pub amount: Decimal,
 }
 
-/// Signed order request ready for submission
+/// Signed order request ready for submission (V2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SignedOrderRequest {
     pub salt: u64,
     pub maker: String,
     pub signer: String,
-    pub taker: String,
     pub token_id: String,
     pub maker_amount: String,
     pub taker_amount: String,
-    pub expiration: String,
-    pub nonce: String,
-    pub fee_rate_bps: String,
     pub side: String,
     pub signature_type: u8,
+    /// Unix ms timestamp (V2).
+    pub timestamp: String,
+    /// 32-byte metadata hex string (V2).
+    pub metadata: String,
+    /// 32-byte builder code hex string (V2).
+    pub builder: String,
     pub signature: String,
 }
 

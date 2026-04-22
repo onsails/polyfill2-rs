@@ -26,6 +26,8 @@ pub enum SigType {
     PolyProxy = 1,
     /// EIP712 signatures signed by EOAs that own Polymarket Gnosis safes
     PolyGnosisSafe = 2,
+    /// EIP-1271 smart-contract wallets / account abstraction (V2).
+    Poly1271 = 3,
 }
 
 /// Rounding configuration for different tick sizes
@@ -302,7 +304,6 @@ impl OrderBuilder {
             exchange_address,
             maker_amount,
             taker_amount,
-            0,
             extras,
         )
     }
@@ -312,7 +313,7 @@ impl OrderBuilder {
         &self,
         chain_id: u64,
         order_args: &OrderArgs,
-        expiration: u64,
+        _expiration: u64,
         extras: &ExtraOrderArgs,
         options: &OrderOptions,
     ) -> Result<SignedOrderRequest> {
@@ -345,12 +346,11 @@ impl OrderBuilder {
             exchange_address,
             maker_amount,
             taker_amount,
-            expiration,
             extras,
         )
     }
 
-    /// Build and sign an order
+    /// Build and sign an order (V2).
     #[allow(clippy::too_many_arguments)]
     fn build_signed_order(
         &self,
@@ -360,29 +360,32 @@ impl OrderBuilder {
         exchange: Address,
         maker_amount: u32,
         taker_amount: u32,
-        expiration: u64,
         extras: &ExtraOrderArgs,
     ) -> Result<SignedOrderRequest> {
         let seed = generate_seed();
-        let taker_address = Address::from_str(&extras.taker)
-            .map_err(|e| PolyfillError::validation(format!("Invalid taker address: {}", e)))?;
 
         let u256_token_id = U256::from_str_radix(&token_id, 10)
             .map_err(|e| PolyfillError::validation(format!("Incorrect tokenId format: {}", e)))?;
+
+        let timestamp_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| {
+                PolyfillError::validation(format!("System clock before UNIX epoch: {}", e))
+            })?
+            .as_millis() as u64;
 
         let order = crate::auth::Order {
             salt: U256::from(seed),
             maker: self.funder,
             signer: self.signer.address(),
-            taker: taker_address,
             tokenId: u256_token_id,
             makerAmount: U256::from(maker_amount),
             takerAmount: U256::from(taker_amount),
-            expiration: U256::from(expiration),
-            nonce: extras.nonce,
-            feeRateBps: U256::from(extras.fee_rate_bps),
             side: side as u8,
             signatureType: self.sig_type as u8,
+            timestamp: U256::from(timestamp_ms),
+            metadata: extras.metadata,
+            builder: extras.builder,
         };
 
         let signature = sign_order_message(&self.signer, order, chain_id, exchange)?;
@@ -391,15 +394,14 @@ impl OrderBuilder {
             salt: seed,
             maker: self.funder.to_checksum(None),
             signer: self.signer.address().to_checksum(None),
-            taker: taker_address.to_checksum(None),
             token_id,
             maker_amount: maker_amount.to_string(),
             taker_amount: taker_amount.to_string(),
-            expiration: expiration.to_string(),
-            nonce: extras.nonce.to_string(),
-            fee_rate_bps: extras.fee_rate_bps.to_string(),
             side: side.as_str().to_string(),
             signature_type: self.sig_type as u8,
+            timestamp: timestamp_ms.to_string(),
+            metadata: format!("{:#x}", extras.metadata),
+            builder: format!("{:#x}", extras.builder),
             signature,
         })
     }
