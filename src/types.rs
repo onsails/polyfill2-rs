@@ -3,7 +3,7 @@
 //! This module defines all the stable public types used throughout the client.
 //! These types are optimized for latency-sensitive trading environments.
 
-use alloy_primitives::{Address, B256};
+use alloy_primitives::{Address, B256, U256};
 use chrono::{DateTime, Utc};
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
@@ -567,6 +567,24 @@ impl Default for ExtraOrderArgs {
         Self {
             metadata: B256::ZERO,
             builder: B256::ZERO,
+        }
+    }
+}
+
+/// V1-order extras (for RFQ accept/approve only).
+#[derive(Debug, Clone)]
+pub struct ExtraOrderArgsV1 {
+    pub fee_rate_bps: u32,
+    pub nonce: U256,
+    pub taker: String,
+}
+
+impl Default for ExtraOrderArgsV1 {
+    fn default() -> Self {
+        Self {
+            fee_rate_bps: 0,
+            nonce: U256::ZERO,
+            taker: "0x0000000000000000000000000000000000000000".to_string(),
         }
     }
 }

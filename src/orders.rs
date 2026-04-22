@@ -6,7 +6,10 @@
 use crate::auth::sign_order_message;
 use crate::client::OrderArgs;
 use crate::errors::{PolyfillError, Result};
-use crate::types::{ExtraOrderArgs, MarketOrderArgs, OrderOptions, Side, SignedOrderRequest};
+use crate::types::{
+    ExtraOrderArgs, ExtraOrderArgsV1, MarketOrderArgs, OrderOptions, RfqOrderExecutionRequest,
+    Side, SignedOrderRequest,
+};
 use alloy_primitives::{Address, U256};
 use alloy_signer_local::PrivateKeySigner;
 use rand::Rng;
@@ -89,6 +92,27 @@ static ROUNDING_CONFIG: LazyLock<HashMap<Decimal, RoundConfig>> = LazyLock::new(
         ),
     ])
 });
+
+/// V1 contract addresses for RFQ accept/approve signing only.
+/// V1 exchange contracts remain active on Polygon mainnet for RFQ flows even
+/// after the CLOB V2 migration.
+pub fn get_v1_contract_config(chain_id: u64, neg_risk: bool) -> Option<ContractConfig> {
+    match (chain_id, neg_risk) {
+        (137, false) => Some(ContractConfig {
+            exchange: "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E".to_string(),
+            collateral: "0x2791Bca1f2de4661ED88A30C99a7a9449Aa84174".to_string(),
+            conditional_tokens: "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045".to_string(),
+            neg_risk_adapter: "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296".to_string(),
+        }),
+        (137, true) => Some(ContractConfig {
+            exchange: "0xC5d563A36AE78145C45a50134d48A1215220f80a".to_string(),
+            collateral: "0x2791Bca1f2de4661ED88A30C99a7a9449Aa84174".to_string(),
+            conditional_tokens: "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045".to_string(),
+            neg_risk_adapter: "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296".to_string(),
+        }),
+        _ => None,
+    }
+}
 
 /// Get contract configuration for chain (CLOB V2)
 pub fn get_contract_config(chain_id: u64, neg_risk: bool) -> Option<ContractConfig> {
@@ -352,6 +376,86 @@ impl OrderBuilder {
         )
     }
 
+    /// Build and sign a V1 order for RFQ accept/approve. This is the only path
+    /// that still uses V1 signing in CLOB V2 — regular trading uses V2 orders.
+    #[allow(clippy::too_many_arguments)]
+    pub fn build_v1_signed_rfq_payload(
+        &self,
+        chain_id: u64,
+        order_args: &OrderArgs,
+        expiration: u64,
+        extras: &ExtraOrderArgsV1,
+        options: &OrderOptions,
+        request_id: String,
+        quote_id: String,
+        owner: String,
+    ) -> Result<RfqOrderExecutionRequest> {
+        let tick_size = options
+            .tick_size
+            .ok_or_else(|| PolyfillError::validation("Cannot create V1 order without tick size"))?;
+        let neg_risk = options
+            .neg_risk
+            .ok_or_else(|| PolyfillError::validation("Cannot create V1 order without neg_risk"))?;
+
+        let contract_config = get_v1_contract_config(chain_id, neg_risk).ok_or_else(|| {
+            PolyfillError::config(
+                "No V1 contract for chain_id/neg_risk (RFQ supports Polygon mainnet)",
+            )
+        })?;
+        let exchange = Address::from_str(&contract_config.exchange)
+            .map_err(|e| PolyfillError::config(format!("Invalid V1 exchange address: {}", e)))?;
+
+        let (maker_amount, taker_amount) = self.get_order_amounts(
+            order_args.side,
+            order_args.size,
+            order_args.price,
+            &ROUNDING_CONFIG[&tick_size],
+        );
+
+        let seed = generate_seed();
+        let taker_address = Address::from_str(&extras.taker)
+            .map_err(|e| PolyfillError::validation(format!("Invalid taker address: {}", e)))?;
+        let u256_token_id = U256::from_str_radix(&order_args.token_id, 10)
+            .map_err(|e| PolyfillError::validation(format!("Incorrect tokenId format: {}", e)))?;
+
+        let order = crate::auth::OrderV1 {
+            salt: U256::from(seed),
+            maker: self.funder,
+            signer: self.signer.address(),
+            taker: taker_address,
+            tokenId: u256_token_id,
+            makerAmount: U256::from(maker_amount),
+            takerAmount: U256::from(taker_amount),
+            expiration: U256::from(expiration),
+            nonce: extras.nonce,
+            feeRateBps: U256::from(extras.fee_rate_bps),
+            side: order_args.side as u8,
+            signatureType: self.sig_type as u8,
+        };
+
+        let signature =
+            crate::auth::sign_v1_order_message(&self.signer, order, chain_id, exchange)?;
+
+        Ok(RfqOrderExecutionRequest {
+            request_id,
+            quote_id,
+            owner,
+            salt: seed,
+            maker: self.funder.to_checksum(None),
+            signer: self.signer.address().to_checksum(None),
+            taker: taker_address.to_checksum(None),
+            token_id: order_args.token_id.clone(),
+            maker_amount: maker_amount.to_string(),
+            taker_amount: taker_amount.to_string(),
+            expiration,
+            nonce: extras.nonce.to_string(),
+            fee_rate_bps: extras.fee_rate_bps.to_string(),
+            side: order_args.side.as_str().to_string(),
+            signature_type: self.sig_type as u8,
+            signature,
+        })
+    }
+
     /// Build and sign an order (V2).
     #[allow(clippy::too_many_arguments)]
     fn build_signed_order(
@@ -457,6 +561,19 @@ mod tests {
         // Test unsupported chain
         let config_unsupported = get_contract_config(999, false);
         assert!(config_unsupported.is_none());
+    }
+
+    #[test]
+    fn test_v1_contract_config_mainnet() {
+        let config = get_v1_contract_config(137, false).expect("mainnet V1 config");
+        assert_eq!(
+            config.exchange.to_lowercase(),
+            "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E".to_lowercase(),
+        );
+        assert_eq!(
+            config.collateral.to_lowercase(),
+            "0x2791Bca1f2de4661ED88A30C99a7a9449Aa84174".to_lowercase(),
+        );
     }
 
     #[test]

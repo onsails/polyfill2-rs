@@ -53,6 +53,33 @@ sol! {
     }
 }
 
+// EIP-712 struct for V1 order signing (used only by RFQ accept/approve).
+// Kept alongside V2 Order because CLOB V2's RFQ protocol still requires V1 signatures.
+//
+// The V1 on-chain Exchange contract registers this EIP-712 type under the name
+// "Order". To preserve that type-name while V2's `Order` sol! struct sits in the
+// parent module, this is declared in an inner module and re-exported as OrderV1.
+mod v1_order {
+    alloy_sol_types::sol! {
+        struct Order {
+            uint256 salt;
+            address maker;
+            address signer;
+            address taker;
+            uint256 tokenId;
+            uint256 makerAmount;
+            uint256 takerAmount;
+            uint256 expiration;
+            uint256 nonce;
+            uint256 feeRateBps;
+            uint8 side;
+            uint8 signatureType;
+        }
+    }
+}
+
+pub use v1_order::Order as OrderV1;
+
 /// Get current Unix timestamp in seconds
 pub fn get_current_unix_time_secs() -> u64 {
     SystemTime::now()
@@ -107,6 +134,27 @@ pub fn sign_order_message(
     let signature = signer
         .sign_typed_data_sync(&order, &domain)
         .map_err(|e| PolyfillError::crypto(format!("Order signature failed: {}", e)))?;
+
+    Ok(encode_prefixed(signature.as_bytes()))
+}
+
+/// Sign V1 order message using EIP-712 (RFQ accept/approve path only).
+pub fn sign_v1_order_message(
+    signer: &PrivateKeySigner,
+    order: OrderV1,
+    chain_id: u64,
+    verifying_contract: Address,
+) -> Result<String> {
+    let domain = eip712_domain!(
+        name: "Polymarket CTF Exchange",
+        version: "1",
+        chain_id: chain_id,
+        verifying_contract: verifying_contract,
+    );
+
+    let signature = signer
+        .sign_typed_data_sync(&order, &domain)
+        .map_err(|e| PolyfillError::crypto(format!("V1 order signature failed: {}", e)))?;
 
     Ok(encode_prefixed(signature.as_bytes()))
 }
@@ -406,5 +454,33 @@ mod tests {
         };
 
         assert_eq!(dummy.eip712_type_hash(), expected);
+    }
+
+    #[test]
+    fn v1_order_typehash_matches_reference() {
+        use alloy_primitives::{keccak256, B256};
+        use alloy_sol_types::SolStruct;
+
+        let expected = keccak256(
+            "Order(uint256 salt,address maker,address signer,address taker,uint256 tokenId,uint256 makerAmount,uint256 takerAmount,uint256 expiration,uint256 nonce,uint256 feeRateBps,uint8 side,uint8 signatureType)",
+        );
+
+        let dummy = OrderV1 {
+            salt: U256::ZERO,
+            maker: Address::ZERO,
+            signer: Address::ZERO,
+            taker: Address::ZERO,
+            tokenId: U256::ZERO,
+            makerAmount: U256::ZERO,
+            takerAmount: U256::ZERO,
+            expiration: U256::ZERO,
+            nonce: U256::ZERO,
+            feeRateBps: U256::ZERO,
+            side: 0,
+            signatureType: 0,
+        };
+
+        assert_eq!(dummy.eip712_type_hash(), expected);
+        let _ = B256::ZERO;
     }
 }
