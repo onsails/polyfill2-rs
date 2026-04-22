@@ -583,6 +583,8 @@ pub struct SignedOrderRequest {
     pub salt: u64,
     pub maker: String,
     pub signer: String,
+    /// Taker address (always zero-address in V2 — not part of EIP-712 hash).
+    pub taker: String,
     pub token_id: String,
     pub maker_amount: String,
     pub taker_amount: String,
@@ -590,6 +592,8 @@ pub struct SignedOrderRequest {
     pub signature_type: u8,
     /// Unix ms timestamp (V2).
     pub timestamp: String,
+    /// Expiration Unix seconds (0 = no expiration; not part of EIP-712 hash).
+    pub expiration: String,
     /// 32-byte metadata hex string (V2).
     pub metadata: String,
     /// 32-byte builder code hex string (V2).
@@ -604,6 +608,10 @@ pub struct PostOrder {
     pub order: SignedOrderRequest,
     pub owner: String,
     pub order_type: OrderType,
+    /// Defer execution until maker orders fill (V2). Defaults to false.
+    pub defer_exec: bool,
+    /// Post-only order: rejects if would cross spread (V2). Defaults to false.
+    pub post_only: bool,
 }
 
 impl PostOrder {
@@ -612,7 +620,16 @@ impl PostOrder {
             order,
             owner,
             order_type,
+            defer_exec: false,
+            post_only: false,
         }
+    }
+
+    #[must_use]
+    pub fn with_flags(mut self, post_only: bool, defer_exec: bool) -> Self {
+        self.post_only = post_only;
+        self.defer_exec = defer_exec;
+        self
     }
 }
 
@@ -1877,7 +1894,7 @@ pub type OrderArgs = OrderRequest;
 
 #[cfg(test)]
 mod tests {
-    use super::OrderType;
+    use super::{OrderType, PostOrder, SignedOrderRequest};
 
     #[test]
     fn test_order_type_fak_serde_and_string() {
@@ -1888,5 +1905,89 @@ mod tests {
 
         let parsed: OrderType = serde_json::from_str("\"FAK\"").unwrap();
         assert_eq!(parsed, OrderType::FAK);
+    }
+
+    #[test]
+    fn test_post_order_v2_json_shape() {
+        let order = SignedOrderRequest {
+            salt: 42,
+            maker: "0xAbC0000000000000000000000000000000000001".to_string(),
+            signer: "0xAbC0000000000000000000000000000000000001".to_string(),
+            taker: "0x0000000000000000000000000000000000000000".to_string(),
+            token_id: "123456789".to_string(),
+            maker_amount: "100000000".to_string(),
+            taker_amount: "50000000".to_string(),
+            side: "BUY".to_string(),
+            signature_type: 0,
+            timestamp: "1700000000000".to_string(),
+            expiration: "0".to_string(),
+            metadata:
+                "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            builder:
+                "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            signature: "0xdeadbeef".to_string(),
+        };
+        let body = PostOrder::new(order, "owner-uuid".to_string(), OrderType::GTC);
+        let v = serde_json::to_value(&body).unwrap();
+
+        // V2 root fields
+        let obj = v.as_object().expect("PostOrder must serialize as object");
+        assert!(obj.contains_key("order"));
+        assert!(obj.contains_key("owner"));
+        assert!(obj.contains_key("orderType"));
+        assert!(obj.contains_key("deferExec"));
+        assert!(obj.contains_key("postOnly"));
+        assert_eq!(obj["deferExec"], serde_json::Value::Bool(false));
+        assert_eq!(obj["postOnly"], serde_json::Value::Bool(false));
+        assert_eq!(obj["orderType"], serde_json::json!("GTC"));
+
+        // V2 order fields: taker + expiration present, nonce + feeRateBps absent
+        let order = obj["order"].as_object().expect("order must be object");
+        for key in [
+            "salt",
+            "maker",
+            "signer",
+            "taker",
+            "tokenId",
+            "makerAmount",
+            "takerAmount",
+            "side",
+            "signatureType",
+            "timestamp",
+            "expiration",
+            "metadata",
+            "builder",
+            "signature",
+        ] {
+            assert!(order.contains_key(key), "missing {key}");
+        }
+        assert!(!order.contains_key("nonce"), "V2 must not include nonce");
+        assert!(
+            !order.contains_key("feeRateBps"),
+            "V2 must not include feeRateBps"
+        );
+    }
+
+    #[test]
+    fn test_post_order_with_flags_sets_post_only_and_defer_exec() {
+        let order = SignedOrderRequest {
+            salt: 1,
+            maker: "0x0".to_string(),
+            signer: "0x0".to_string(),
+            taker: "0x0".to_string(),
+            token_id: "1".to_string(),
+            maker_amount: "0".to_string(),
+            taker_amount: "0".to_string(),
+            side: "BUY".to_string(),
+            signature_type: 0,
+            timestamp: "0".to_string(),
+            expiration: "0".to_string(),
+            metadata: "0x0".to_string(),
+            builder: "0x0".to_string(),
+            signature: "0x0".to_string(),
+        };
+        let body = PostOrder::new(order, "o".to_string(), OrderType::GTC).with_flags(true, true);
+        assert!(body.post_only);
+        assert!(body.defer_exec);
     }
 }

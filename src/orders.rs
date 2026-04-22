@@ -304,6 +304,7 @@ impl OrderBuilder {
             exchange_address,
             maker_amount,
             taker_amount,
+            0,
             extras,
         )
     }
@@ -313,7 +314,7 @@ impl OrderBuilder {
         &self,
         chain_id: u64,
         order_args: &OrderArgs,
-        _expiration: u64,
+        expiration: u64,
         extras: &ExtraOrderArgs,
         options: &OrderOptions,
     ) -> Result<SignedOrderRequest> {
@@ -346,6 +347,7 @@ impl OrderBuilder {
             exchange_address,
             maker_amount,
             taker_amount,
+            expiration,
             extras,
         )
     }
@@ -360,6 +362,7 @@ impl OrderBuilder {
         exchange: Address,
         maker_amount: u32,
         taker_amount: u32,
+        expiration: u64,
         extras: &ExtraOrderArgs,
     ) -> Result<SignedOrderRequest> {
         let seed = generate_seed();
@@ -394,12 +397,14 @@ impl OrderBuilder {
             salt: seed,
             maker: self.funder.to_checksum(None),
             signer: self.signer.address().to_checksum(None),
+            taker: "0x0000000000000000000000000000000000000000".to_string(),
             token_id,
             maker_amount: maker_amount.to_string(),
             taker_amount: taker_amount.to_string(),
             side: side.as_str().to_string(),
             signature_type: self.sig_type as u8,
             timestamp: timestamp_ms.to_string(),
+            expiration: expiration.to_string(),
             metadata: format!("{:#x}", extras.metadata),
             builder: format!("{:#x}", extras.builder),
             signature,

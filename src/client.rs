@@ -2471,17 +2471,18 @@ mod tests {
     }
 
     fn sample_signed_order() -> crate::types::SignedOrderRequest {
-        // TODO(v2): update POST body fixture once commit 5 finalises /order shape.
         crate::types::SignedOrderRequest {
             salt: 1,
             maker: "0x0000000000000000000000000000000000000000".to_string(),
             signer: "0x0000000000000000000000000000000000000000".to_string(),
+            taker: "0x0000000000000000000000000000000000000000".to_string(),
             token_id: "123".to_string(),
             maker_amount: "100".to_string(),
             taker_amount: "50".to_string(),
             side: "BUY".to_string(),
             signature_type: 0,
             timestamp: "0".to_string(),
+            expiration: "0".to_string(),
             metadata: "0x0000000000000000000000000000000000000000000000000000000000000000"
                 .to_string(),
             builder: "0x0000000000000000000000000000000000000000000000000000000000000000"
