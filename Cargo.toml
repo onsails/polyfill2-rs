@@ -1,16 +1,24 @@
 [package]
-name = "polyfill-rs"
-version = "0.3.1"
+name = "polyfill2"
+version = "0.1.0"
 edition = "2021"
-authors = ["Julius Tranquilli <jtranqs@gmail.com>"]
-description = "The Fastest Polymarket Client On The Market."
+authors = [
+    "Andrey Kuznetsov <andrey@onsails.com>",
+    "Julius Tranquilli <jtranqs@gmail.com>",
+]
+description = "Polymarket CLOB V2 Rust client (fork of polyfill-rs). High-performance, EIP-712 signing, WebSocket streaming."
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/floor-licker/polyfill-rs"
+repository = "https://github.com/onsails/polyfill2-rs"
 readme = "README.md"
 keywords = ["polymarket", "clob", "trading", "prediction-market", "crypto"]
 categories = ["api-bindings", "network-programming"]
-documentation = "https://docs.rs/polyfill-rs"
-homepage = "https://github.com/floor-licker/polyfill-rs"
+documentation = "https://docs.rs/polyfill2"
+homepage = "https://github.com/onsails/polyfill2-rs"
+
+[lib]
+name = "polyfill2"
+path = "src/lib.rs"
+
 [dependencies]
 # Pin base64ct to avoid Edition 2024 requirement
 base64ct = "=1.6.0"

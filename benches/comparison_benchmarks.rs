@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use polyfill_rs::{OrderArgs, OrderBookImpl, Side};
+use polyfill2::{OrderArgs, OrderBookImpl, Side};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
@@ -45,10 +45,10 @@ fn benchmark_order_book_operations(c: &mut Criterion) {
                 let price = Decimal::from_str(&format!("0.{:04}", 5000 + (i % 100))).unwrap();
                 let size = Decimal::from_str("100.0").unwrap();
 
-                let bid_delta = polyfill_rs::OrderDelta {
+                let bid_delta = polyfill2::OrderDelta {
                     token_id: "test_token".to_string(),
                     timestamp: chrono::Utc::now(),
-                    side: polyfill_rs::Side::BUY,
+                    side: polyfill2::Side::BUY,
                     price,
                     size,
                     sequence: i as u64,
@@ -71,13 +71,13 @@ fn benchmark_fast_operations(c: &mut Criterion) {
         let price = Decimal::from_str(&format!("0.{:04}", 5000 + i)).unwrap();
         let size = Decimal::from_str("100.0").unwrap();
 
-        let delta = polyfill_rs::OrderDelta {
+        let delta = polyfill2::OrderDelta {
             token_id: "test_token".to_string(),
             timestamp: chrono::Utc::now(),
             side: if i % 2 == 0 {
-                polyfill_rs::Side::BUY
+                polyfill2::Side::BUY
             } else {
-                polyfill_rs::Side::SELL
+                polyfill2::Side::SELL
             },
             price,
             size,

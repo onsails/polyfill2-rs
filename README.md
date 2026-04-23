@@ -28,7 +28,7 @@ Replace your imports:
 
 ```rust
 // Before: use polymarket_rs_client::{ClobClient, Side, OrderType};
-use polyfill_rs::{ClobClient, Side, OrderType};
+use polyfill2::{ClobClient, Side, OrderType};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

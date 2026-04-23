@@ -15,7 +15,7 @@
 
 #![cfg(feature = "integration-v2")]
 
-use polyfill_rs::ClobClient;
+use polyfill2::ClobClient;
 use std::env;
 use std::time::Duration;
 
@@ -27,8 +27,7 @@ const WS_USER_URL: &str = "wss://ws-subscriptions-clob.polymarket.com/ws/user";
 /// credentials via `create_or_derive_api_key`. Holds no funds and is safe to
 /// commit. Override with `POLYMARKET_PRIVATE_KEY` env if you want to run
 /// against your own account.
-const TEST_PRIVATE_KEY: &str =
-    "0xf975a3fc603addabe79f2e59d438dacf1626ca723f1f6ba1d5a93ac51039b0e4";
+const TEST_PRIVATE_KEY: &str = "0xf975a3fc603addabe79f2e59d438dacf1626ca723f1f6ba1d5a93ac51039b0e4";
 
 fn base_url() -> String {
     env::var("CLOB_V2_URL").unwrap_or_else(|_| DEFAULT_V2_URL.to_string())
@@ -62,7 +61,10 @@ async fn authed_client() -> ClobClient {
 async fn v2_unauth_ok() {
     let client = unauth_client();
     let ok = client.get_ok().await;
-    assert!(ok, "V2 /ok returned false — server unhealthy or unreachable");
+    assert!(
+        ok,
+        "V2 /ok returned false — server unhealthy or unreachable"
+    );
     println!("V2 /ok OK: {}", ok);
 }
 
@@ -85,7 +87,10 @@ async fn v2_unauth_sampling_markets() {
         .get_sampling_markets(None)
         .await
         .expect("get_sampling_markets failed");
-    println!("V2 sampling_markets returned {} markets", markets.data.len());
+    println!(
+        "V2 sampling_markets returned {} markets",
+        markets.data.len()
+    );
     if let Some(m) = markets.data.first() {
         if let Some(token) = m.tokens.first() {
             println!(
@@ -154,7 +159,7 @@ async fn v2_auth_create_or_derive_api_key() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn v2_auth_get_rfq_config() {
-    use polyfill_rs::PolyfillError;
+    use polyfill2::PolyfillError;
 
     let client = authed_client().await;
     match client.get_rfq_config().await {
@@ -197,7 +202,7 @@ async fn v2_auth_get_orders() {
 #[tokio::test(flavor = "multi_thread")]
 async fn v2_ws_user_channel_subscribe() {
     use futures::StreamExt;
-    use polyfill_rs::WebSocketStream;
+    use polyfill2::WebSocketStream;
 
     let pk = private_key();
     let auth_client = ClobClient::with_l1_headers(&base_url(), &pk, POLYGON_CHAIN_ID);

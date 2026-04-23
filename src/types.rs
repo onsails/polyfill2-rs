@@ -1972,10 +1972,10 @@ mod tests {
             signature_type: 0,
             timestamp: "1700000000000".to_string(),
             expiration: "0".to_string(),
-            metadata:
-                "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
-            builder:
-                "0x0000000000000000000000000000000000000000000000000000000000000000".to_string(),
+            metadata: "0x0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
+            builder: "0x0000000000000000000000000000000000000000000000000000000000000000"
+                .to_string(),
             signature: "0xdeadbeef".to_string(),
         };
         let body = PostOrder::new(order, "owner-uuid".to_string(), OrderType::GTC);

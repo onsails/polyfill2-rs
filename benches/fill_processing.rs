@@ -4,7 +4,7 @@
 //! fill processing operations.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use polyfill_rs::{
+use polyfill2::{
     book::OrderBook,
     fill::{FillEngine, FillProcessor},
     types::{FillEvent, MarketOrderRequest, OrderDelta, Side},

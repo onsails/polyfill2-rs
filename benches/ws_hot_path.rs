@@ -6,8 +6,8 @@
 //! focus on throughput/latency of the processing path.
 
 use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
-use polyfill_rs::types::BookUpdate;
-use polyfill_rs::{OrderBookManager, OrderSummary, StreamMessage, WsBookUpdateProcessor};
+use polyfill2::types::BookUpdate;
+use polyfill2::{OrderBookManager, OrderSummary, StreamMessage, WsBookUpdateProcessor};
 use rust_decimal::Decimal;
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -201,7 +201,7 @@ fn bench_ws_book_process_bytes(c: &mut Criterion) {
                         msg
                     },
                     |msg| {
-                        let messages = polyfill_rs::decode::parse_stream_messages_bytes(black_box(
+                        let messages = polyfill2::decode::parse_stream_messages_bytes(black_box(
                             msg.as_slice(),
                         ))
                         .unwrap();

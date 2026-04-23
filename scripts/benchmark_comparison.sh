@@ -73,7 +73,7 @@ run_memory_profiling() {
         
         # Create a simple test binary for memory profiling
         cat > /tmp/memory_test.rs << 'EOF'
-use polyfill_rs::ClobClient;
+use polyfill2::ClobClient;
 use tokio;
 
 #[tokio::main]
@@ -102,7 +102,7 @@ EOF
         
         # Compile the test
         rustc --edition 2021 -L target/release/deps /tmp/memory_test.rs -o /tmp/memory_test \
-            --extern polyfill_rs=target/release/libpolyfill_rs.rlib \
+            --extern polyfill2=target/release/libpolyfill2.rlib \
             --extern tokio=target/release/deps/libtokio*.rlib 2>/dev/null || {
             print_warning "Could not compile memory test. Skipping detailed memory analysis."
             return

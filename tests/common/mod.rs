@@ -1,6 +1,6 @@
 //! Common utilities for integration tests
 
-use polyfill_rs::{ClobClient, Result};
+use polyfill2::{ClobClient, Result};
 use std::env;
 use std::time::Duration;
 
@@ -58,7 +58,7 @@ impl TestConfig {
     /// Create an authenticated client for testing
     pub fn create_auth_client(&self) -> Result<ClobClient> {
         let private_key = self.private_key.as_ref()
-            .ok_or_else(|| polyfill_rs::PolyfillError::auth("No private key provided", polyfill_rs::errors::AuthErrorKind::InvalidCredentials))?;
+            .ok_or_else(|| polyfill2::PolyfillError::auth("No private key provided", polyfill2::errors::AuthErrorKind::InvalidCredentials))?;
         
         Ok(ClobClient::with_l1_headers(&self.host, private_key, self.chain_id))
     }
@@ -82,7 +82,7 @@ impl TestUtils {
     pub async fn get_test_token_id(client: &ClobClient) -> Result<String> {
         let markets = client.get_sampling_markets(None).await?;
         if markets.data.is_empty() {
-            return Err(polyfill_rs::PolyfillError::internal_simple("No markets available for testing"));
+            return Err(polyfill2::PolyfillError::internal_simple("No markets available for testing"));
         }
         
         let token_id = markets.data[0].tokens[0].token_id.clone();
@@ -106,7 +106,7 @@ impl TestUtils {
             tokio::time::sleep(check_interval).await;
         }
 
-        Err(polyfill_rs::PolyfillError::timeout(
+        Err(polyfill2::PolyfillError::timeout(
             timeout,
             "Condition not met within timeout".to_string(),
         ))
@@ -135,7 +135,7 @@ impl TestUtils {
         }).await;
 
         if duration > max_duration {
-            return Err(polyfill_rs::PolyfillError::timeout(
+            return Err(polyfill2::PolyfillError::timeout(
                 duration,
                 format!("Operation took too long: {:?} > {:?}", duration, max_duration),
             ));

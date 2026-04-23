@@ -3,7 +3,7 @@
 //! This example demonstrates all available API endpoints in a simple, easy-to-run format.
 //! It can be run without authentication credentials and will test all public endpoints.
 
-use polyfill_rs::{ClobClient, PolyfillError, Result, Side};
+use polyfill2::{ClobClient, PolyfillError, Result, Side};
 use rust_decimal::Decimal;
 use tokio::time::{sleep, Duration};
 use tracing::{error, info, warn};
@@ -174,11 +174,11 @@ async fn test_market_data_endpoints(client: &ClobClient, token_id: &str) -> Resu
 
 /// Validate that market data is consistent
 fn validate_market_data(
-    order_book: &polyfill_rs::client::OrderBookSummary,
-    midpoint: &polyfill_rs::client::MidpointResponse,
-    spread: &polyfill_rs::client::SpreadResponse,
-    buy_price: &polyfill_rs::client::PriceResponse,
-    sell_price: &polyfill_rs::client::PriceResponse,
+    order_book: &polyfill2::client::OrderBookSummary,
+    midpoint: &polyfill2::client::MidpointResponse,
+    spread: &polyfill2::client::SpreadResponse,
+    buy_price: &polyfill2::client::PriceResponse,
+    sell_price: &polyfill2::client::PriceResponse,
 ) -> Result<()> {
     // Check that we have some liquidity
     if order_book.bids.is_empty() && order_book.asks.is_empty() {

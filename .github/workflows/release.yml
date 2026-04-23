@@ -1,0 +1,58 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: dtolnay/rust-toolchain@stable
+
+    - name: Cache dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    # Gate publishing on the same checks CI runs on main, minus live integration.
+    - name: Verify formatting
+      run: cargo fmt --all -- --check
+
+    - name: Verify clippy
+      run: cargo clippy --lib --tests --all-features -- -D warnings
+
+    # Run everything except the live integration-v2 smoke tests. The no-alloc
+    # hot-path tests live in their own binary with a custom global allocator;
+    # they run fine alongside the others (no cross-binary interference).
+    - name: Run tests
+      run: cargo test --features stream
+
+    - name: Verify tag matches Cargo.toml version
+      run: |
+        TAG="${GITHUB_REF#refs/tags/v}"
+        CRATE_VERSION="$(cargo metadata --format-version 1 --no-deps \
+          | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+        if [ "$TAG" != "$CRATE_VERSION" ]; then
+          echo "Tag v$TAG does not match Cargo.toml version $CRATE_VERSION" >&2
+          exit 1
+        fi
+
+    - name: Publish dry-run
+      run: cargo publish --dry-run
+
+    - name: Publish to crates.io
+      env:
+        CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      run: cargo publish --token "$CARGO_REGISTRY_TOKEN"

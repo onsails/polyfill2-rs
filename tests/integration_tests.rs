@@ -2,7 +2,7 @@
 // These tests hit the real Polymarket API and are ignored by default
 // Run with: cargo test --test integration_tests -- --ignored --test-threads=1
 
-use polyfill_rs::{ClobClient, OrderArgs, Side};
+use polyfill2::{ClobClient, OrderArgs, Side};
 use rust_decimal_macros::dec;
 use std::env;
 
@@ -131,13 +131,13 @@ async fn test_real_api_authenticated_order_flow() {
         Err(e) => {
             // The critical failure: did we get a 401 (authentication failure)?
             match &e {
-                polyfill_rs::PolyfillError::Api { status: 401, .. } => {
+                polyfill2::PolyfillError::Api { status: 401, .. } => {
                     panic!(
                         "FAIL: CRITICAL: 401 Unauthorized error - HMAC authentication is broken!"
                     );
                 },
                 // Any 4xx other than 401 indicates auth succeeded and we reached server-side validation.
-                polyfill_rs::PolyfillError::Api {
+                polyfill2::PolyfillError::Api {
                     status: 400..=499, ..
                 } => {
                     println!("PASS: Authentication successful (got expected validation error)");
@@ -231,7 +231,7 @@ async fn test_real_api_get_balance_allowance() {
         .expect("Failed to get markets");
     let token_id = &markets.data[0].tokens[0].token_id;
 
-    use polyfill_rs::types::{AssetType, BalanceAllowanceParams};
+    use polyfill2::types::{AssetType, BalanceAllowanceParams};
     let params = BalanceAllowanceParams {
         asset_type: Some(AssetType::CONDITIONAL),
         token_id: Some(token_id.clone()),

@@ -80,7 +80,7 @@ manual_timing_test() {
     echo "Testing real API calls with manual timing:"
     
     cat > /tmp/timing_test.rs << 'EOF'
-use polyfill_rs::ClobClient;
+use polyfill2::ClobClient;
 use std::time::Instant;
 
 #[tokio::main]
@@ -119,7 +119,7 @@ EOF
 
     echo "Compiling timing test..."
     rustc --edition 2021 -L target/release/deps /tmp/timing_test.rs -o /tmp/timing_test \
-        --extern polyfill_rs=target/release/libpolyfill_rs.rlib \
+        --extern polyfill2=target/release/libpolyfill2.rlib \
         --extern tokio=target/release/deps/libtokio*.rlib 2>/dev/null || {
         print_warning "Could not compile timing test. Running with cargo instead..."
         

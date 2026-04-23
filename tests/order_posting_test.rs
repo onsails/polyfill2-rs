@@ -1,5 +1,5 @@
 // Test order posting - the critical endpoint that had the 401 bug
-use polyfill_rs::{ClobClient, OrderArgs, Side};
+use polyfill2::{ClobClient, OrderArgs, Side};
 use rust_decimal::Decimal;
 use std::env;
 use std::str::FromStr;

@@ -1,5 +1,5 @@
 // Simple authentication test to verify HMAC works
-use polyfill_rs::ClobClient;
+use polyfill2::ClobClient;
 use std::env;
 
 #[tokio::test(flavor = "multi_thread")]

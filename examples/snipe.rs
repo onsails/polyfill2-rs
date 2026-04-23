@@ -6,7 +6,7 @@
 //! - Rapid order execution
 //! - Market impact analysis
 
-use polyfill_rs::{
+use polyfill2::{
     book::OrderBookManager,
     errors::Result,
     fill::{FillEngine, FillStatus},
@@ -262,7 +262,7 @@ impl SnipeStrategy {
 
         // Get current book for execution simulation
         let book = self.book_manager.get_book(&self.token_id)?;
-        let mut book_impl = polyfill_rs::book::OrderBook::new(self.token_id.clone(), 100);
+        let mut book_impl = polyfill2::book::OrderBook::new(self.token_id.clone(), 100);
 
         // Convert to internal book format
         for level in &book.bids {

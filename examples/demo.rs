@@ -9,7 +9,7 @@
 //! - Error handling and retry logic
 //! - Rate limiting and performance optimizations
 
-use polyfill_rs::{
+use polyfill2::{
     // Order book management
     book::{OrderBook, OrderBookManager},
 
@@ -636,6 +636,7 @@ impl PolyfillDemo {
                 fee_rate_bps: None,
                 transaction_hash: None,
                 trader_side: None,
+                bucket_index: None,
             }),
         ];
 

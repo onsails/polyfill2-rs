@@ -68,7 +68,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Test 2: polyfill-rs (with keep-alive)");
     println!("══════════════════════════════════════");
 
-    let our_client = polyfill_rs::ClobClient::new("https://clob.polymarket.com");
+    let our_client = polyfill2::ClobClient::new("https://clob.polymarket.com");
     our_client
         .start_keepalive(std::time::Duration::from_secs(30))
         .await;

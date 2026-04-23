@@ -13,7 +13,7 @@
 //! # Quick Start
 //!
 //! ```rust,no_run
-//! use polyfill_rs::{ClobClient, OrderArgs, Side};
+//! use polyfill2::{ClobClient, OrderArgs, Side};
 //! use rust_decimal::Decimal;
 //! use std::str::FromStr;
 //!
@@ -48,7 +48,7 @@
 //! # Advanced Usage
 //!
 //! ```rust,no_run
-//! use polyfill_rs::{ClobClient, OrderBookImpl};
+//! use polyfill2::{ClobClient, OrderBookImpl};
 //! use rust_decimal::Decimal;
 //!
 //! #[tokio::main]

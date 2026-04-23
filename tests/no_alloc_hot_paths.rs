@@ -5,7 +5,7 @@ use std::hash::{Hash, Hasher};
 use std::str::FromStr;
 
 use chrono::Utc;
-use polyfill_rs::{
+use polyfill2::{
     book::OrderBookManager, OrderBookImpl, Side, WebSocketStream, WsBookUpdateProcessor,
 };
 use rust_decimal::Decimal;
@@ -75,11 +75,11 @@ fn token_id_hash(token_id: &str) -> u64 {
 fn mk_delta(
     token_id_hash: u64,
     side: Side,
-    price_ticks: polyfill_rs::types::Price,
-    size_units: polyfill_rs::types::Qty,
+    price_ticks: polyfill2::types::Price,
+    size_units: polyfill2::types::Qty,
     sequence: u64,
-) -> polyfill_rs::types::FastOrderDelta {
-    polyfill_rs::types::FastOrderDelta {
+) -> polyfill2::types::FastOrderDelta {
+    polyfill2::types::FastOrderDelta {
         token_id_hash,
         timestamp: chrono::DateTime::<Utc>::from_timestamp(0, 0).unwrap(),
         side,
@@ -144,15 +144,15 @@ fn no_alloc_apply_book_update_existing_levels() {
     book.apply_delta_fast(mk_delta(token_hash, Side::SELL, 7600, 1_000_000, 2))
         .unwrap();
 
-    let update = polyfill_rs::types::BookUpdate {
+    let update = polyfill2::types::BookUpdate {
         asset_id: asset_id.to_string(),
         market: "0xabc".to_string(),
         timestamp: 10,
-        bids: vec![polyfill_rs::types::OrderSummary {
+        bids: vec![polyfill2::types::OrderSummary {
             price: Decimal::from_str("0.75").unwrap(),
             size: Decimal::from_str("200.0").unwrap(),
         }],
-        asks: vec![polyfill_rs::types::OrderSummary {
+        asks: vec![polyfill2::types::OrderSummary {
             price: Decimal::from_str("0.76").unwrap(),
             size: Decimal::from_str("50.0").unwrap(),
         }],
@@ -175,7 +175,7 @@ fn no_alloc_book_manager_apply_book_update_existing_levels() {
 
     // Warm up the internal book with initial levels (allocations allowed).
     manager
-        .apply_delta(polyfill_rs::types::OrderDelta {
+        .apply_delta(polyfill2::types::OrderDelta {
             token_id: asset_id.to_string(),
             timestamp: chrono::Utc::now(),
             side: Side::BUY,
@@ -185,7 +185,7 @@ fn no_alloc_book_manager_apply_book_update_existing_levels() {
         })
         .unwrap();
     manager
-        .apply_delta(polyfill_rs::types::OrderDelta {
+        .apply_delta(polyfill2::types::OrderDelta {
             token_id: asset_id.to_string(),
             timestamp: chrono::Utc::now(),
             side: Side::SELL,
@@ -195,15 +195,15 @@ fn no_alloc_book_manager_apply_book_update_existing_levels() {
         })
         .unwrap();
 
-    let update = polyfill_rs::types::BookUpdate {
+    let update = polyfill2::types::BookUpdate {
         asset_id: asset_id.to_string(),
         market: "0xabc".to_string(),
         timestamp: 10,
-        bids: vec![polyfill_rs::types::OrderSummary {
+        bids: vec![polyfill2::types::OrderSummary {
             price: Decimal::from_str("0.75").unwrap(),
             size: Decimal::from_str("200.0").unwrap(),
         }],
-        asks: vec![polyfill_rs::types::OrderSummary {
+        asks: vec![polyfill2::types::OrderSummary {
             price: Decimal::from_str("0.76").unwrap(),
             size: Decimal::from_str("50.0").unwrap(),
         }],
@@ -226,7 +226,7 @@ fn no_alloc_ws_book_update_processor_apply_existing_levels() {
 
     // Warm up the internal book with initial levels (allocations allowed).
     manager
-        .apply_delta(polyfill_rs::types::OrderDelta {
+        .apply_delta(polyfill2::types::OrderDelta {
             token_id: asset_id.to_string(),
             timestamp: chrono::Utc::now(),
             side: Side::BUY,
@@ -236,7 +236,7 @@ fn no_alloc_ws_book_update_processor_apply_existing_levels() {
         })
         .unwrap();
     manager
-        .apply_delta(polyfill_rs::types::OrderDelta {
+        .apply_delta(polyfill2::types::OrderDelta {
             token_id: asset_id.to_string(),
             timestamp: chrono::Utc::now(),
             side: Side::SELL,
@@ -280,7 +280,7 @@ fn no_alloc_websocket_book_applier_apply_text_message_existing_levels() {
 
     // Warm up the internal book with initial levels (allocations allowed).
     manager
-        .apply_delta(polyfill_rs::types::OrderDelta {
+        .apply_delta(polyfill2::types::OrderDelta {
             token_id: asset_id.to_string(),
             timestamp: chrono::Utc::now(),
             side: Side::BUY,
@@ -290,7 +290,7 @@ fn no_alloc_websocket_book_applier_apply_text_message_existing_levels() {
         })
         .unwrap();
     manager
-        .apply_delta(polyfill_rs::types::OrderDelta {
+        .apply_delta(polyfill2::types::OrderDelta {
             token_id: asset_id.to_string(),
             timestamp: chrono::Utc::now(),
             side: Side::SELL,

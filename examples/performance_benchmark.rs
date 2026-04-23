@@ -1,4 +1,4 @@
-use polyfill_rs::ClobClient;
+use polyfill2::ClobClient;
 use std::time::{Duration, Instant};
 
 async fn measure_multiple_runs<F, Fut, T>(name: &str, iterations: usize, mut f: F) -> Vec<Duration>
@@ -120,7 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Loaded API credentials from environment");
 
     // Create API credentials
-    let api_creds = polyfill_rs::ApiCredentials {
+    let api_creds = polyfill2::ApiCredentials {
         api_key,
         secret,
         passphrase,

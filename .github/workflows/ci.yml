@@ -35,8 +35,11 @@ jobs:
     - name: Run clippy
       run: cargo clippy --lib --bins --tests --benches --all-features -- -D warnings && cargo clippy --example benchmark_with_keepalive --example demo --example final_benchmark --example http2_tuning_benchmark --example performance_benchmark --example quick_demo --example snipe -- -D warnings
 
-    - name: Run tests (excluding no-alloc hot paths)
-      run: cargo test --all-features -- --skip no_alloc_
+    # Intentionally does NOT use --all-features: the `integration-v2` feature
+    # enables live HTTP/WS smoke tests against clob-v2.polymarket.com and
+    # must not run in CI (flaky, depends on staging availability).
+    - name: Run tests (excluding no-alloc hot paths and live integration)
+      run: cargo test --features stream -- --skip no_alloc_
 
     - name: Build examples
       run: |

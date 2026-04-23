@@ -4,7 +4,7 @@
 //! including delta application, price updates, and book maintenance.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use polyfill_rs::{
+use polyfill2::{
     book::OrderBook,
     types::{OrderDelta, Side},
 };

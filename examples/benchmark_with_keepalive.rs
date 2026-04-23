@@ -1,4 +1,4 @@
-use polyfill_rs::ClobClient;
+use polyfill2::ClobClient;
 use std::time::{Duration, Instant};
 
 #[tokio::main]

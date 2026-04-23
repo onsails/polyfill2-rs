@@ -5,7 +5,7 @@
 // Run with:
 //   cargo test --all-features --test prices_history_integration_tests -- --ignored --nocapture --test-threads=1
 
-use polyfill_rs::{ClobClient, PricesHistoryInterval};
+use polyfill2::{ClobClient, PricesHistoryInterval};
 
 const HOST: &str = "https://clob.polymarket.com";
 
