@@ -1,16 +1,13 @@
-![polyfill-rs](header.png)
-
-[![Crates.io](https://img.shields.io/crates/v/polyfill-rs.svg)](https://crates.io/crates/polyfill-rs)
-[![Documentation](https://docs.rs/polyfill-rs/badge.svg)](https://docs.rs/polyfill-rs)
+[![Crates.io](https://img.shields.io/crates/v/polyfill2.svg)](https://crates.io/crates/polyfill2)
+[![Documentation](https://docs.rs/polyfill2/badge.svg)](https://docs.rs/polyfill2)
+[![CI](https://github.com/onsails/polyfill2-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/onsails/polyfill2-rs/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](LICENSE)
 
-A high-performance Polymarket Rust client with latency-optimized data structures and zero-allocation hot paths. An API-compatible drop-in replacement for `polymarket-rs-client` with identical method signatures. 
+A high-performance Rust client for Polymarket's **CLOB V2** API, with latency-optimized data structures and zero-allocation hot paths. This is a V2 migration fork of [`polyfill-rs`](https://github.com/floor-licker/polyfill-rs) (Julius Tranquilli), updated in April 2026 for the CLOB V2 cutover (new EIP-712 Order schema, new contract addresses, new endpoint URLs, new WebSocket message shapes).
 
-At the time that this project was started, `polymarket-rs-client` was a Polymarket Rust Client with a few GitHub stars, but which seemed to be unmaintained. I took on the task of creating a Rust client which could beat the benchmarks quoted in the README.md of that project, with the added constraint of also maintaining zero alloc hot paths.
+`polyfill-rs` was originally created as a performance-focused Rust alternative to `polymarket-rs-client`, aiming to beat the benchmarks quoted in that project's README while maintaining zero-allocation hot paths. This fork carries those properties forward onto V2.
 
-I also want to take a moment to clarify what zero-alloc means because I've now recieved double digit messages about this on twitter/x and telegram. In general, zero alloc means either zero alloc in hot paths (which can be a bit more arbitrary) or atlernatively it can mean zero alloc after init/warm-up, which is the objective of this repository. Succinctly that means that **the per-message handling loop never touches the heap**. 
-
-Notably order book paths that introduce new allocations by design:
+**On zero-alloc**: in this project, "zero-alloc" means zero allocations in the per-message handling loop after init/warm-up — i.e. **the hot path never touches the heap**, even though cold paths do. Order book paths that introduce new allocations by design:
 - First time seeing a token/book (HashMap insert + key clone): `src/book.rs:~788`
 - New price levels (BTreeMap node growth): `src/book.rs:~409`
 
@@ -21,18 +18,15 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-polyfill-rs = "0.3.0"
+polyfill2 = "0.1"
 ```
 
-Replace your imports:
-
 ```rust
-// Before: use polymarket_rs_client::{ClobClient, Side, OrderType};
 use polyfill2::{ClobClient, Side, OrderType};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = ClobClient::new("https://clob.polymarket.com");
+    let client = ClobClient::new("https://clob-v2.polymarket.com");
     let markets = client.get_sampling_markets(None).await?;
     println!("Found {} markets", markets.data.len());
     Ok(())
@@ -40,6 +34,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 ## Performance Comparison
+
+> **Note:** the numbers below were measured on upstream `polyfill-rs` against CLOB V1 (`clob.polymarket.com`) prior to the V2 migration. Computational paths (book updates, spread/mid, WS decode) are unchanged and should still hold; the networked end-to-end number has not been re-measured against V2 — [#1](https://github.com/onsails/polyfill2-rs/issues/1) tracks re-measurement.
 
 **Real-World API Performance (with network I/O)**
 
@@ -88,3 +84,7 @@ Price data converts to fixed-point at ingress boundaries while maintaining tick-
 | **Connection pre-warming** | **70% faster subsequent requests** | Application startup |
 | **Request parallelization** | **200% faster batch operations** | Multi-market data fetching |
 | **Circuit breaker resilience** | **Better uptime during instability** | Production trading systems |
+
+## Credits
+
+`polyfill-rs` was originally authored by Julius Tranquilli ([floor-licker/polyfill-rs](https://github.com/floor-licker/polyfill-rs)). This V2 fork (`polyfill2`) is maintained by [onsails](https://github.com/onsails).
