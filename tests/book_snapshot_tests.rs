@@ -213,6 +213,147 @@ fn snapshot_panics_on_descending_asks_in_debug() {
     .unwrap();
 }
 
+// ── End-to-end via WsBookUpdateProcessor ──────────────────────────────────────
+//
+// Uses a JSON payload with the exact shape from Polymarket's AsyncAPI docs
+// example (https://docs.polymarket.com/asyncapi.json, `receiveBook` operation).
+
+use polyfill2::{OrderBookManager, WsBookUpdateProcessor};
+
+/// Parses the docs' example `book` payload and produces a book matching the
+/// sent levels, with the best bid/ask at the correct end of the ladder.
+#[test]
+fn book_event_from_docs_example_parses_correctly() {
+    let asset_id = "65818619657568813474341868652308942079804919287380422192892211131408793125422";
+
+    let manager = OrderBookManager::new(100);
+    manager.get_or_create_book(asset_id).unwrap();
+
+    let mut processor = WsBookUpdateProcessor::new(1024);
+
+    let mut msg = format!(
+        "{{\"event_type\":\"book\",\
+          \"asset_id\":\"{asset_id}\",\
+          \"market\":\"0xbd31dc8a20211944f6b70f31557f1001557b59905b7738480ca09bd4532f84af\",\
+          \"bids\":[\
+            {{\"price\":\"0.48\",\"size\":\"30\"}},\
+            {{\"price\":\"0.49\",\"size\":\"20\"}},\
+            {{\"price\":\"0.50\",\"size\":\"15\"}}\
+          ],\
+          \"asks\":[\
+            {{\"price\":\"0.52\",\"size\":\"25\"}},\
+            {{\"price\":\"0.53\",\"size\":\"60\"}},\
+            {{\"price\":\"0.54\",\"size\":\"10\"}}\
+          ],\
+          \"timestamp\":\"1757908892351\",\
+          \"hash\":\"0xabc123\"}}"
+    )
+    .into_bytes();
+
+    let stats = processor
+        .process_bytes(msg.as_mut_slice(), &manager)
+        .unwrap();
+    assert_eq!(stats.book_messages, 1);
+    assert_eq!(stats.book_levels_applied, 6);
+
+    let snap = manager
+        .with_book_mut(asset_id, |b| Ok(b.snapshot()))
+        .expect("book exists");
+
+    assert_eq!(snap.bids.len(), 3);
+    assert_eq!(snap.asks.len(), 3);
+
+    // Best bid = highest price = 0.50; best ask = lowest = 0.52.
+    let bid_prices: Vec<_> = snap.bids.iter().map(|l| l.price).collect();
+    let ask_prices: Vec<_> = snap.asks.iter().map(|l| l.price).collect();
+    assert_eq!(
+        bid_prices[0],
+        dec("0.50"),
+        "best bid should be first in snapshot (desc)",
+    );
+    assert_eq!(
+        ask_prices[0],
+        dec("0.52"),
+        "best ask should be first in snapshot (asc)",
+    );
+
+    // Timestamp in 2020s, not ~57716.
+    assert!((2020..2100).contains(&snap.timestamp.year()));
+}
+
+/// Alternating snapshots S1 -> S2 -> S1 through the WS decode+apply path
+/// must produce the same book state as S1 on the third message, with S2's
+/// levels fully gone.
+#[test]
+fn book_event_alternating_snapshots_no_state_leak() {
+    let asset_id = "abc-stream-test";
+    let manager = OrderBookManager::new(100);
+    manager.get_or_create_book(asset_id).unwrap();
+
+    let mut processor = WsBookUpdateProcessor::new(1024);
+
+    let mk = |ts: u64, bids_json: &str, asks_json: &str| -> Vec<u8> {
+        format!(
+            "{{\"event_type\":\"book\",\"asset_id\":\"{asset_id}\",\"market\":\"0xabc\",\"timestamp\":{ts},\"bids\":{bids_json},\"asks\":{asks_json}}}"
+        )
+        .into_bytes()
+    };
+
+    // S1
+    let mut s1 = mk(
+        1,
+        r#"[{"price":"0.74","size":"100"},{"price":"0.75","size":"200"}]"#,
+        r#"[{"price":"0.76","size":"50"},{"price":"0.77","size":"30"}]"#,
+    );
+    processor
+        .process_bytes(s1.as_mut_slice(), &manager)
+        .unwrap();
+
+    // S2
+    let mut s2 = mk(
+        2,
+        r#"[{"price":"0.60","size":"500"}]"#,
+        r#"[{"price":"0.90","size":"10"}]"#,
+    );
+    processor
+        .process_bytes(s2.as_mut_slice(), &manager)
+        .unwrap();
+
+    let snap2 = manager
+        .with_book_mut(asset_id, |b| Ok(b.snapshot()))
+        .unwrap();
+    assert_eq!(snap2.bids.len(), 1);
+    assert_eq!(snap2.bids[0].price, dec("0.60"));
+    assert_eq!(snap2.asks.len(), 1);
+    assert_eq!(snap2.asks[0].price, dec("0.90"));
+
+    // S1 again — S2's 0.60 / 0.90 must not leak.
+    let mut s1_again = mk(
+        3,
+        r#"[{"price":"0.74","size":"100"},{"price":"0.75","size":"200"}]"#,
+        r#"[{"price":"0.76","size":"50"},{"price":"0.77","size":"30"}]"#,
+    );
+    processor
+        .process_bytes(s1_again.as_mut_slice(), &manager)
+        .unwrap();
+
+    let snap3 = manager
+        .with_book_mut(asset_id, |b| Ok(b.snapshot()))
+        .unwrap();
+    assert_eq!(snap3.bids.len(), 2);
+    assert_eq!(snap3.asks.len(), 2);
+    assert!(
+        snap3.bids.iter().all(|l| l.price != dec("0.60")),
+        "S2 bid leaked into S3: {:?}",
+        snap3.bids,
+    );
+    assert!(
+        snap3.asks.iter().all(|l| l.price != dec("0.90")),
+        "S2 ask leaked into S3: {:?}",
+        snap3.asks,
+    );
+}
+
 /// Alternating snapshots S1 -> S2 -> S1 must produce the expected book each time,
 /// with no state leakage between snapshots.
 #[test]
