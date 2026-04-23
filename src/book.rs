@@ -476,6 +476,12 @@ impl OrderBook {
     /// (preserved levels omitted from the message — wrong). Now replaces the book:
     /// levels omitted from the message are removed. Matches the actual wire
     /// contract of Polymarket CLOB V2 `book` messages. See issue #6.
+    ///
+    /// If the apply loop errors mid-flight (invalid price/size, tick misalignment),
+    /// the sweep and `trim_depth` phases still run so the book is left in a
+    /// consistent (possibly sparse) state rather than a zeroed-out one. The
+    /// sequence has already been advanced, so the next snapshot with a strictly
+    /// newer timestamp will fully repopulate the book.
     pub fn apply_book_update(&mut self, update: &BookUpdate) -> Result<()> {
         if update.asset_id != self.token_id {
             return Err(PolyfillError::validation("Token ID mismatch"));
@@ -488,7 +494,8 @@ impl OrderBook {
         // Polymarket WSS `book` events in the docs example carry ascending-price
         // levels on both sides. `trim_depth` below is order-agnostic so correctness
         // does not depend on this, but a violation signals a server-side contract
-        // change worth catching early. Compiled out in release.
+        // change worth catching early. Compiled out in release. The assert fires
+        // before any state mutation, so a panic here leaves the book unchanged.
         debug_assert!(
             update.bids.windows(2).all(|w| w[0].price <= w[1].price),
             "CLOB `book` message: bids not in ascending price order. See polyfill2 issue #6.",
@@ -510,9 +517,29 @@ impl OrderBook {
             *size = 0;
         }
 
-        // Apply phase — unconditional insert. Wire-zero levels are carried through
-        // and dropped in the sweep. Overwriting an existing key does not allocate.
-        for level in &update.bids {
+        // Apply phase — may error mid-flight. Capture the result so the sweep
+        // phase runs regardless.
+        let apply_result = self.apply_snapshot_levels(&update.bids, &update.asks);
+
+        // Sweep phase — drop marked-but-not-overwritten levels and any wire-zero.
+        // Always runs, even if apply errored, to avoid leaving the book zeroed.
+        self.bids.retain(|_, size| *size != 0);
+        self.asks.retain(|_, size| *size != 0);
+
+        self.trim_depth();
+        apply_result
+    }
+
+    /// Apply-phase helper: insert parsed bid/ask levels into the book.
+    ///
+    /// Extracted from `apply_book_update` so the caller can run the sweep phase
+    /// regardless of whether this returns `Ok` or `Err`.
+    fn apply_snapshot_levels(
+        &mut self,
+        bids: &[OrderSummary],
+        asks: &[OrderSummary],
+    ) -> Result<()> {
+        for level in bids {
             let price_ticks = decimal_to_price(level.price)
                 .map_err(|_| PolyfillError::validation("Invalid price"))?;
             let size_units = decimal_to_qty(level.size)
@@ -527,7 +554,7 @@ impl OrderBook {
             self.bids.insert(price_ticks, size_units);
         }
 
-        for level in &update.asks {
+        for level in asks {
             let price_ticks = decimal_to_price(level.price)
                 .map_err(|_| PolyfillError::validation("Invalid price"))?;
             let size_units = decimal_to_qty(level.size)
@@ -542,11 +569,6 @@ impl OrderBook {
             self.asks.insert(price_ticks, size_units);
         }
 
-        // Sweep phase — drop marked-but-not-overwritten levels and any wire-zero.
-        self.bids.retain(|_, size| *size != 0);
-        self.asks.retain(|_, size| *size != 0);
-
-        self.trim_depth();
         Ok(())
     }
 

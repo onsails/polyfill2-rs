@@ -134,15 +134,28 @@ fn process_stream_object<'tape, 'input>(
         }
 
         let mut applied = 0usize;
-        if let Some(bids) = bids {
-            applied += apply_levels(book, Side::BUY, bids)?;
-        }
-        if let Some(asks) = asks {
-            applied += apply_levels(book, Side::SELL, asks)?;
-        }
+        // Apply phase — capture the first error (if any) so we can still sweep below.
+        let apply_result = 'apply: {
+            if let Some(bids) = bids {
+                match apply_levels(book, Side::BUY, bids) {
+                    Ok(n) => applied += n,
+                    Err(e) => break 'apply Err(e),
+                }
+            }
+            if let Some(asks) = asks {
+                match apply_levels(book, Side::SELL, asks) {
+                    Ok(n) => applied += n,
+                    Err(e) => break 'apply Err(e),
+                }
+            }
+            Ok(())
+        };
 
+        // Sweep phase always runs — prevents the book from being left with all
+        // sizes zeroed if the apply phase errored.
         book.finish_ws_book_update();
-        Ok(applied)
+
+        apply_result.map(|_| applied)
     })?;
 
     Ok(WsBookApplyStats {
