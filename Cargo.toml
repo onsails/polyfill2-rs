@@ -21,20 +21,20 @@ path = "src/lib.rs"
 
 [dependencies]
 # Pin base64ct to avoid Edition 2024 requirement
-base64ct = "=1.6.0"
+base64ct = "=1.8.3"
 # Async runtime and futures
 tokio = { version = "1.41", features = ["full"] }
 futures = "0.3"
 futures-util = "0.3"
 
 # HTTP client
-reqwest = { version = "0.12", features = ["json", "stream", "gzip"] }
-hickory-resolver = "0.24"
+reqwest = { version = "0.13", features = ["json", "stream", "gzip"] }
+hickory-resolver = "0.26"
 
 # Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-simd-json = "0.13"
+simd-json = "0.17"
 dotenvy = "0.15"
 
 # Ethereum and crypto
@@ -49,12 +49,12 @@ rust_decimal_macros = "1.36"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Crypto and encoding
 base64 = "0.22"
-hmac = "0.12"
-sha2 = "0.10"
+hmac = "0.13"
+sha2 = "0.11"
 
 # Logging
 tracing = "0.1"
@@ -67,17 +67,17 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.0", features = ["v4", "serde"] }
 url = "2.5"
 bytes = "1.11.1"
-rand = "0.8"
+rand = "0.10"
 
 # Optional WebSocket support for streaming
-tokio-tungstenite = { version = "0.21", optional = true, features = ["native-tls"] }
+tokio-tungstenite = { version = "0.29", optional = true, features = ["native-tls"] }
 
 [dev-dependencies]
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 tokio-test = "0.4"
 mockito = "1.0"
 proptest = "1.0"
-env_logger = "0.10"
+env_logger = "0.11"
 
 [features]
 default = ["stream"]
