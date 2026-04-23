@@ -12,7 +12,7 @@ use crate::types::{
 };
 use alloy_primitives::{Address, U256};
 use alloy_signer_local::PrivateKeySigner;
-use rand::Rng;
+use rand::RngExt;
 use rust_decimal::Decimal;
 use rust_decimal::RoundingStrategy::{AwayFromZero, MidpointTowardZero, ToZero};
 use std::collections::HashMap;
@@ -147,8 +147,8 @@ pub fn get_contract_config(chain_id: u64, neg_risk: bool) -> Option<ContractConf
 
 /// Generate a random seed for order salt
 fn generate_seed() -> u64 {
-    let mut rng = rand::thread_rng();
-    let y: f64 = rng.gen();
+    let mut rng = rand::rng();
+    let y: f64 = rng.random();
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("Time went backwards")

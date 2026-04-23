@@ -3,7 +3,8 @@
 //! This benchmark measures the performance of trade execution and
 //! fill processing operations.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, Criterion};
 use polyfill2::{
     book::OrderBook,
     fill::{FillEngine, FillProcessor},

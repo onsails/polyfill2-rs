@@ -1,4 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use std::hint::black_box;
+use criterion::{criterion_group, criterion_main, Criterion};
 use polyfill2::{OrderArgs, OrderBookImpl, Side};
 use rust_decimal::Decimal;
 use std::str::FromStr;
