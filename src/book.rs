@@ -413,8 +413,8 @@ impl OrderBook {
         }
 
         self.sequence = timestamp;
-        self.timestamp =
-            chrono::DateTime::<Utc>::from_timestamp(timestamp as i64, 0).unwrap_or_else(Utc::now);
+        self.timestamp = chrono::DateTime::<Utc>::from_timestamp_millis(timestamp as i64)
+            .unwrap_or_else(Utc::now);
 
         Ok(true)
     }
@@ -471,7 +471,7 @@ impl OrderBook {
         }
 
         self.sequence = update.timestamp;
-        self.timestamp = chrono::DateTime::<Utc>::from_timestamp(update.timestamp as i64, 0)
+        self.timestamp = chrono::DateTime::<Utc>::from_timestamp_millis(update.timestamp as i64)
             .unwrap_or_else(Utc::now);
 
         // Apply bids (BUY) and asks (SELL) as level upserts.

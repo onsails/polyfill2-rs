@@ -73,7 +73,6 @@ fn snapshot_clears_stale_levels() {
 /// Bug A regression: a 13-digit millisecond timestamp must parse to the current century,
 /// not to year ~57,716 (which is what happens when millis are interpreted as seconds).
 #[test]
-#[ignore = "unignored in Task 3 (bug A fix)"]
 fn snapshot_timestamp_parses_as_millis() {
     let mut book = OrderBookImpl::new(ASSET.to_string(), 100);
 
