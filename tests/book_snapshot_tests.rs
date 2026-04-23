@@ -6,7 +6,7 @@ use std::str::FromStr;
 
 use chrono::Datelike;
 use polyfill2::types::{BookUpdate, OrderSummary};
-use polyfill2::OrderBookImpl;
+use polyfill2::{OrderBookImpl, OrderBookManager, WsBookUpdateProcessor};
 use rust_decimal::Decimal;
 
 fn dec(s: &str) -> Decimal {
@@ -218,8 +218,6 @@ fn snapshot_panics_on_descending_asks_in_debug() {
 // Uses a JSON payload with the exact shape from Polymarket's AsyncAPI docs
 // example (https://docs.polymarket.com/asyncapi.json, `receiveBook` operation).
 
-use polyfill2::{OrderBookManager, WsBookUpdateProcessor};
-
 /// Parses the docs' example `book` payload and produces a book matching the
 /// sent levels, with the best bid/ask at the correct end of the ladder.
 #[test]
@@ -256,9 +254,7 @@ fn book_event_from_docs_example_parses_correctly() {
     assert_eq!(stats.book_messages, 1);
     assert_eq!(stats.book_levels_applied, 6);
 
-    let snap = manager
-        .with_book_mut(asset_id, |b| Ok(b.snapshot()))
-        .expect("book exists");
+    let snap = manager.get_book(asset_id).expect("book exists");
 
     assert_eq!(snap.bids.len(), 3);
     assert_eq!(snap.asks.len(), 3);
@@ -319,9 +315,7 @@ fn book_event_alternating_snapshots_no_state_leak() {
         .process_bytes(s2.as_mut_slice(), &manager)
         .unwrap();
 
-    let snap2 = manager
-        .with_book_mut(asset_id, |b| Ok(b.snapshot()))
-        .unwrap();
+    let snap2 = manager.get_book(asset_id).unwrap();
     assert_eq!(snap2.bids.len(), 1);
     assert_eq!(snap2.bids[0].price, dec("0.60"));
     assert_eq!(snap2.asks.len(), 1);
@@ -337,9 +331,7 @@ fn book_event_alternating_snapshots_no_state_leak() {
         .process_bytes(s1_again.as_mut_slice(), &manager)
         .unwrap();
 
-    let snap3 = manager
-        .with_book_mut(asset_id, |b| Ok(b.snapshot()))
-        .unwrap();
+    let snap3 = manager.get_book(asset_id).unwrap();
     assert_eq!(snap3.bids.len(), 2);
     assert_eq!(snap3.asks.len(), 2);
     assert!(
