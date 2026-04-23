@@ -360,6 +360,7 @@ fn no_alloc_steady_state_snapshot_replay() {
     book.apply_book_update(&snapshot).unwrap();
 
     // Replay with a strictly larger timestamp so the stale-sequence check passes.
+    // Clone allocates (bids/asks Vecs), but happens before the guard — intentional.
     let replay = polyfill2::types::BookUpdate {
         timestamp: 11,
         ..snapshot.clone()
