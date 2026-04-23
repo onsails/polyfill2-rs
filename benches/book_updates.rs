@@ -3,13 +3,14 @@
 //! This benchmark measures the performance of order book operations
 //! including delta application, price updates, and book maintenance.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use polyfill2::{
     book::OrderBook,
     types::{OrderDelta, Side},
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::hint::black_box;
 use std::time::Instant;
 
 fn bench_book_creation(c: &mut Criterion) {

@@ -1,6 +1,7 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use polyfill2::{ClobClient, OrderArgs, Side};
 use rust_decimal::Decimal;
+use std::hint::black_box;
 use std::str::FromStr;
 use tokio::runtime::Runtime;
 

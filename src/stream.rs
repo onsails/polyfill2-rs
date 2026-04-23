@@ -152,7 +152,7 @@ impl WebSocketStream {
                 PolyfillError::parse(format!("Failed to serialize message: {}", e), None)
             })?;
 
-            let ws_message = tokio_tungstenite::tungstenite::Message::Text(text);
+            let ws_message = tokio_tungstenite::tungstenite::Message::Text(text.into());
             connection.send(ws_message).await.map_err(|e| {
                 PolyfillError::stream(
                     format!("Failed to send message: {}", e),
@@ -434,6 +434,21 @@ impl<'a> WebSocketBookApplier<'a> {
         self.stream.stats.last_message_time = Some(Utc::now());
         Ok(stats)
     }
+
+    /// Apply a WS text payload received as `Utf8Bytes` (tungstenite 0.29+).
+    ///
+    /// Zero-copy when the underlying `Bytes` buffer is uniquely owned, which is
+    /// the case for payloads produced by tokio-tungstenite.
+    fn apply_text_utf8(
+        &mut self,
+        text: tokio_tungstenite::tungstenite::Utf8Bytes,
+    ) -> Result<WsBookApplyStats> {
+        let bytes: bytes::Bytes = text.into();
+        let vec: Vec<u8> = bytes.into();
+        // SAFETY: Utf8Bytes guarantees the payload is valid UTF-8.
+        let owned = unsafe { String::from_utf8_unchecked(vec) };
+        self.apply_text_message(owned)
+    }
 }
 
 impl<'a> Stream for WebSocketBookApplier<'a> {
@@ -449,7 +464,7 @@ impl<'a> Stream for WebSocketBookApplier<'a> {
                 Poll::Pending => return Poll::Pending,
                 Poll::Ready(Some(Ok(msg))) => match msg {
                     tokio_tungstenite::tungstenite::Message::Text(text) => {
-                        match self.apply_text_message(text) {
+                        match self.apply_text_utf8(text) {
                             Ok(stats) => {
                                 if stats.book_messages == 0 {
                                     continue;

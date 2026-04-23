@@ -8,7 +8,7 @@ use ::url::Url;
 use alloy_primitives::{Address, U256};
 use base64::{engine::general_purpose::URL_SAFE, Engine};
 use chrono::{DateTime, Utc};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use rust_decimal::Decimal;
 use serde::Serialize;
 use sha2::Sha256;
@@ -108,8 +108,8 @@ pub mod crypto {
 
     /// Generate a secure random nonce
     pub fn generate_nonce() -> U256 {
-        use rand::RngCore;
-        let mut rng = rand::thread_rng();
+        use rand::Rng;
+        let mut rng = rand::rng();
         let mut bytes = [0u8; 32];
         rng.fill_bytes(&mut bytes);
         U256::from_be_bytes(bytes)
@@ -117,8 +117,8 @@ pub mod crypto {
 
     /// Generate a secure random salt
     pub fn generate_salt() -> u64 {
-        use rand::RngCore;
-        let mut rng = rand::thread_rng();
+        use rand::Rng;
+        let mut rng = rand::rng();
         rng.next_u64()
     }
 }

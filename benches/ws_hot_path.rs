@@ -5,10 +5,11 @@
 //! The allocation checks live in `tests/no_alloc_hot_paths.rs`; these benches
 //! focus on throughput/latency of the processing path.
 
-use criterion::{black_box, criterion_group, criterion_main, BatchSize, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BatchSize, Criterion, Throughput};
 use polyfill2::types::BookUpdate;
 use polyfill2::{OrderBookManager, OrderSummary, StreamMessage, WsBookUpdateProcessor};
 use rust_decimal::Decimal;
+use std::hint::black_box;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const START_TIMESTAMP: u64 = 1_000_000_000_000_000;
