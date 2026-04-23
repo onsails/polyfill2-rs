@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - WebSocket `book` event timestamp is now parsed as milliseconds instead
   of seconds. The `timestamp` field in Polymarket CLOB V2 `book` messages
   carries 13-digit millis; prior code interpreted it as Unix seconds,
-  resolving a 2025 timestamp to year ~57,716. Fixes #6.
+  resolving a 2025 timestamp to year ~57,716.
 
 ### Added
 
@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   we do not follow that change because V2 `price_change` events are
   deltas and remain the common steady-state flow.
 
-## [0.2.0] - 2026-04-22
+## [0.2.0] - 2026-04-23
 
 - See git history for details (V2 migration fork of
   [`polyfill-rs`](https://github.com/floor-licker/polyfill-rs)).
