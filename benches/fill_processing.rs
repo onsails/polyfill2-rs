@@ -3,7 +3,6 @@
 //! This benchmark measures the performance of trade execution and
 //! fill processing operations.
 
-use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, Criterion};
 use polyfill2::{
     book::OrderBook,
@@ -12,6 +11,7 @@ use polyfill2::{
 };
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::hint::black_box;
 use std::time::Instant;
 
 fn bench_fill_engine_creation(c: &mut Criterion) {

@@ -1,7 +1,7 @@
-use std::hint::black_box;
 use criterion::{criterion_group, criterion_main, Criterion};
 use polyfill2::{OrderArgs, OrderBookImpl, Side};
 use rust_decimal::Decimal;
+use std::hint::black_box;
 use std::str::FromStr;
 
 // Benchmark: Create an order with EIP-712 signature (computational cost only)
