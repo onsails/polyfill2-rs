@@ -40,4 +40,12 @@
   enterTest = ''
     cargo test --all-features --lib
   '';
+
+  git-hooks.hooks = {
+    rustfmt.enable = true;
+    clippy = {
+      enable = true;
+      settings.allFeatures = true;
+    };
+  };
 }
