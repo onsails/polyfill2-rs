@@ -534,6 +534,12 @@ impl OrderBook {
     ///
     /// Extracted from `apply_book_update` so the caller can run the sweep phase
     /// regardless of whether this returns `Ok` or `Err`.
+    ///
+    /// Zero-sized wire levels are handled in-place (removed if present, no-op
+    /// otherwise) rather than inserted and dropped by sweep — this avoids an
+    /// unnecessary alloc+dealloc cycle when the server sends a new price with
+    /// size 0 (which shouldn't happen in a snapshot per the wire contract, but
+    /// we handle it defensively).
     fn apply_snapshot_levels(
         &mut self,
         bids: &[OrderSummary],
@@ -551,7 +557,11 @@ impl OrderBook {
                 }
             }
 
-            self.bids.insert(price_ticks, size_units);
+            if size_units == 0 {
+                self.bids.remove(&price_ticks);
+            } else {
+                self.bids.insert(price_ticks, size_units);
+            }
         }
 
         for level in asks {
@@ -566,7 +576,11 @@ impl OrderBook {
                 }
             }
 
-            self.asks.insert(price_ticks, size_units);
+            if size_units == 0 {
+                self.asks.remove(&price_ticks);
+            } else {
+                self.asks.insert(price_ticks, size_units);
+            }
         }
 
         Ok(())
