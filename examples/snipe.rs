@@ -101,15 +101,11 @@ impl SnipeStrategy {
     /// Process a market data update
     pub fn process_update(&mut self, message: StreamMessage) -> Result<()> {
         match message {
-            StreamMessage::Book(book) => {
-                if book.asset_id == self.token_id {
-                    self.process_book_update(book)?;
-                }
+            StreamMessage::Book(book) if book.asset_id == self.token_id => {
+                self.process_book_update(book)?;
             },
-            StreamMessage::Trade(trade) => {
-                if trade.asset_id == self.token_id {
-                    self.process_trade(trade)?;
-                }
+            StreamMessage::Trade(trade) if trade.asset_id == self.token_id => {
+                self.process_trade(trade)?;
             },
             _ => {},
         }
