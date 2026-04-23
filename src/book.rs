@@ -403,6 +403,11 @@ impl OrderBook {
     ///
     /// Returns `Ok(true)` if the update should be applied, or `Ok(false)` if the update is stale
     /// and should be skipped.
+    ///
+    /// Since v0.3.0: the WS `book` event is a full snapshot (not a diff). This method
+    /// performs the "mark" phase of mark-and-sweep: it zeros all existing level sizes so
+    /// that `finish_ws_book_update` can sweep any level that the incoming message did not
+    /// overwrite. See issue #6.
     pub(crate) fn begin_ws_book_update(&mut self, asset_id: &str, timestamp: u64) -> Result<bool> {
         if asset_id != self.token_id {
             return Err(PolyfillError::validation("Token ID mismatch"));
@@ -415,6 +420,16 @@ impl OrderBook {
         self.sequence = timestamp;
         self.timestamp = chrono::DateTime::<Utc>::from_timestamp_millis(timestamp as i64)
             .unwrap_or_else(Utc::now);
+
+        // Mark phase: zero every existing value in place. Phase 2 (apply) overwrites
+        // survivors; phase 3 (sweep, in finish_ws_book_update) drops non-survivors.
+        // `values_mut` iterates stack-only — no allocation.
+        for size in self.bids.values_mut() {
+            *size = 0;
+        }
+        for size in self.asks.values_mut() {
+            *size = 0;
+        }
 
         Ok(true)
     }
@@ -444,37 +459,59 @@ impl OrderBook {
     }
 
     /// Finish applying a WS `book` update.
+    ///
+    /// Sweep phase of mark-and-sweep: drop any level still carrying sentinel size 0
+    /// (either zeroed by `begin_ws_book_update` and not overwritten by the incoming
+    /// snapshot, or carrying wire-zero size that should not appear in the book).
+    /// Then enforce `max_depth`. `retain` is a no-op when nothing was marked stale.
     pub(crate) fn finish_ws_book_update(&mut self) {
+        self.bids.retain(|_, size| *size != 0);
+        self.asks.retain(|_, size| *size != 0);
         self.trim_depth();
     }
 
-    /// Apply a WebSocket `book` update for this token.
+    /// Apply a full order-book snapshot from a WebSocket `book` event.
     ///
-    /// The official Polymarket CLOB WebSocket `book` event contains batches of
-    /// price levels for both sides. Unlike `apply_delta_fast`, this method can
-    /// apply many levels that share the same message timestamp.
-    ///
-    /// Notes:
-    /// - This performs upserts (update/insert/remove) for the provided levels.
-    /// - It does **not** infer removals for levels omitted from the message.
-    /// - Insertions of *new* price levels may allocate (BTreeMap node growth).
+    /// **Semantics changed in 0.3.0:** previously upserted the supplied levels
+    /// (preserved levels omitted from the message — wrong). Now replaces the book:
+    /// levels omitted from the message are removed. Matches the actual wire
+    /// contract of Polymarket CLOB V2 `book` messages. See issue #6.
     pub fn apply_book_update(&mut self, update: &BookUpdate) -> Result<()> {
         if update.asset_id != self.token_id {
             return Err(PolyfillError::validation("Token ID mismatch"));
         }
 
-        // Use the exchange-provided timestamp as our monotonic sequence marker.
-        // This is less strict than the REST/legacy delta sequence but works for
-        // ignoring obviously stale book snapshots.
         if update.timestamp <= self.sequence {
             return Ok(());
         }
+
+        // Polymarket WSS `book` events in the docs example carry ascending-price
+        // levels on both sides. `trim_depth` below is order-agnostic so correctness
+        // does not depend on this, but a violation signals a server-side contract
+        // change worth catching early. Compiled out in release.
+        debug_assert!(
+            update.bids.windows(2).all(|w| w[0].price <= w[1].price),
+            "CLOB `book` message: bids not in ascending price order. See polyfill2 issue #6.",
+        );
+        debug_assert!(
+            update.asks.windows(2).all(|w| w[0].price <= w[1].price),
+            "CLOB `book` message: asks not in ascending price order. See polyfill2 issue #6.",
+        );
 
         self.sequence = update.timestamp;
         self.timestamp = chrono::DateTime::<Utc>::from_timestamp_millis(update.timestamp as i64)
             .unwrap_or_else(Utc::now);
 
-        // Apply bids (BUY) and asks (SELL) as level upserts.
+        // Mark phase — see begin_ws_book_update for the model.
+        for size in self.bids.values_mut() {
+            *size = 0;
+        }
+        for size in self.asks.values_mut() {
+            *size = 0;
+        }
+
+        // Apply phase — unconditional insert. Wire-zero levels are carried through
+        // and dropped in the sweep. Overwriting an existing key does not allocate.
         for level in &update.bids {
             let price_ticks = decimal_to_price(level.price)
                 .map_err(|_| PolyfillError::validation("Invalid price"))?;
@@ -487,11 +524,7 @@ impl OrderBook {
                 }
             }
 
-            if size_units == 0 {
-                self.bids.remove(&price_ticks);
-            } else {
-                self.bids.insert(price_ticks, size_units);
-            }
+            self.bids.insert(price_ticks, size_units);
         }
 
         for level in &update.asks {
@@ -506,12 +539,12 @@ impl OrderBook {
                 }
             }
 
-            if size_units == 0 {
-                self.asks.remove(&price_ticks);
-            } else {
-                self.asks.insert(price_ticks, size_units);
-            }
+            self.asks.insert(price_ticks, size_units);
         }
+
+        // Sweep phase — drop marked-but-not-overwritten levels and any wire-zero.
+        self.bids.retain(|_, size| *size != 0);
+        self.asks.retain(|_, size| *size != 0);
 
         self.trim_depth();
         Ok(())

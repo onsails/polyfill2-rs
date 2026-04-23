@@ -163,6 +163,8 @@ fn apply_levels<'tape, 'input>(
     levels: simd_json::tape::Array<'tape, 'input>,
 ) -> Result<usize> {
     let mut applied = 0usize;
+    let mut prev_price: Option<crate::types::Price> = None;
+
     for level in levels.iter() {
         let Some(obj) = level.as_object() else {
             continue;
@@ -186,6 +188,18 @@ fn apply_levels<'tape, 'input>(
             .map_err(|_| PolyfillError::validation("Invalid price"))?;
         let size_units =
             decimal_to_qty(size_decimal).map_err(|_| PolyfillError::validation("Invalid size"))?;
+
+        // Docs example shows ascending-price levels. Catch a server-side reorder in debug.
+        // See polyfill2 issue #6.
+        if let Some(prev) = prev_price {
+            debug_assert!(
+                price_ticks >= prev,
+                "CLOB `book` message: levels not in ascending price order ({} < {}). See polyfill2 issue #6.",
+                price_ticks,
+                prev,
+            );
+        }
+        prev_price = Some(price_ticks);
 
         book.apply_ws_book_level_fast(side, price_ticks, size_units)?;
         applied += 1;

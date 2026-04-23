@@ -41,7 +41,6 @@ const ASSET: &str = "test_asset_id";
 /// Bug B regression: a new `book` snapshot must remove levels from prior snapshots
 /// that are not present in the new message.
 #[test]
-#[ignore = "unignored in Task 4 (bug B fix)"]
 fn snapshot_clears_stale_levels() {
     let mut book = OrderBookImpl::new(ASSET.to_string(), 100);
 
@@ -183,12 +182,12 @@ fn snapshot_ignored_when_timestamp_le_sequence() {
     assert_eq!(snap.asks[0].price, dec("0.76"));
 }
 
-/// Docs-example input shows ascending-price on both sides. In debug builds we
-/// assert this and panic on violation to catch a server-side contract change early.
+/// In debug builds, ascending-price order is asserted on incoming levels.
+/// Violations panic to catch a server-side contract change early.
+/// These two tests are compiled and run only in debug profiles.
 #[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "ascending")]
-#[ignore = "unignored in Task 4 (debug_assert added)"]
 fn snapshot_panics_on_descending_bids_in_debug() {
     let mut book = OrderBookImpl::new(ASSET.to_string(), 100);
     book.apply_book_update(&book_update(
@@ -203,7 +202,6 @@ fn snapshot_panics_on_descending_bids_in_debug() {
 #[cfg(debug_assertions)]
 #[test]
 #[should_panic(expected = "ascending")]
-#[ignore = "unignored in Task 4 (debug_assert added)"]
 fn snapshot_panics_on_descending_asks_in_debug() {
     let mut book = OrderBookImpl::new(ASSET.to_string(), 100);
     book.apply_book_update(&book_update(
@@ -218,7 +216,6 @@ fn snapshot_panics_on_descending_asks_in_debug() {
 /// Alternating snapshots S1 -> S2 -> S1 must produce the expected book each time,
 /// with no state leakage between snapshots.
 #[test]
-#[ignore = "unignored in Task 4 (bug B fix)"]
 fn snapshot_alternating_s1_s2_s1_has_no_leakage() {
     let mut book = OrderBookImpl::new(ASSET.to_string(), 100);
 
