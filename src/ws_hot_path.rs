@@ -129,12 +129,25 @@ fn process_stream_object<'tape, 'input>(
     let asks = obj.get("asks").and_then(|v| v.as_array());
 
     let levels_applied = books.with_book_mut(asset_id, |book| {
+        // Assert ordering before any state mutation so a panic leaves the book unchanged.
+        // Mirrors the pre-mutation check in `OrderBook::apply_book_update` in `book.rs`.
+        #[cfg(debug_assertions)]
+        {
+            if let Some(bids) = bids {
+                assert_levels_sorted(bids, "bids");
+            }
+            if let Some(asks) = asks {
+                assert_levels_sorted(asks, "asks");
+            }
+        }
+
         if !book.begin_ws_book_update(asset_id, timestamp)? {
             return Ok(0);
         }
 
         let mut applied = 0usize;
-        // Apply phase — capture the first error (if any) so we can still sweep below.
+        // Capture the first apply error so sweep still runs below — otherwise a
+        // mid-flight failure would leave the book zeroed by the mark phase.
         let apply_result = 'apply: {
             if let Some(bids) = bids {
                 match apply_levels(book, Side::BUY, bids) {
@@ -151,8 +164,6 @@ fn process_stream_object<'tape, 'input>(
             Ok(())
         };
 
-        // Sweep phase always runs — prevents the book from being left with all
-        // sizes zeroed if the apply phase errored.
         book.finish_ws_book_update();
 
         apply_result.map(|_| applied)
@@ -176,7 +187,6 @@ fn apply_levels<'tape, 'input>(
     levels: simd_json::tape::Array<'tape, 'input>,
 ) -> Result<usize> {
     let mut applied = 0usize;
-    let mut prev_price: Option<crate::types::Price> = None;
 
     for level in levels.iter() {
         let Some(obj) = level.as_object() else {
@@ -202,21 +212,43 @@ fn apply_levels<'tape, 'input>(
         let size_units =
             decimal_to_qty(size_decimal).map_err(|_| PolyfillError::validation("Invalid size"))?;
 
-        // Docs example shows ascending-price levels. Catch a server-side reorder in debug.
-        // See polyfill2 issue #6.
-        if let Some(prev) = prev_price {
-            debug_assert!(
-                price_ticks >= prev,
-                "CLOB `book` message: levels not in ascending price order ({} < {}). See polyfill2 issue #6.",
-                price_ticks,
-                prev,
-            );
-        }
-        prev_price = Some(price_ticks);
-
         book.apply_ws_book_level_fast(side, price_ticks, size_units)?;
         applied += 1;
     }
 
     Ok(applied)
+}
+
+/// Debug-only: verify levels arrive in ascending price order.
+///
+/// Runs BEFORE any book mutation so a panic leaves the book unchanged. Iterates
+/// the simd-json tape in place (zero-alloc) and silently skips malformed entries —
+/// the real apply loop surfaces those as `Result` errors.
+#[cfg(debug_assertions)]
+fn assert_levels_sorted<'tape, 'input>(
+    levels: simd_json::tape::Array<'tape, 'input>,
+    side_label: &str,
+) {
+    let mut prev: Option<crate::types::Price> = None;
+    for level in levels.iter() {
+        let Some(obj) = level.as_object() else {
+            continue;
+        };
+        let Some(price_str) = obj.get("price").and_then(|v| v.into_string()) else {
+            continue;
+        };
+        let Ok(price_dec) = Decimal::from_str(price_str) else {
+            continue;
+        };
+        let Ok(price_ticks) = decimal_to_price(price_dec) else {
+            continue;
+        };
+        if let Some(p) = prev {
+            debug_assert!(
+                price_ticks >= p,
+                "CLOB `book` message: {side_label} not in ascending price order ({price_ticks} < {p})",
+            );
+        }
+        prev = Some(price_ticks);
+    }
 }

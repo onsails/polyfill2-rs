@@ -404,10 +404,9 @@ impl OrderBook {
     /// Returns `Ok(true)` if the update should be applied, or `Ok(false)` if the update is stale
     /// and should be skipped.
     ///
-    /// Since v0.3.0: the WS `book` event is a full snapshot (not a diff). This method
-    /// performs the "mark" phase of mark-and-sweep: it zeros all existing level sizes so
-    /// that `finish_ws_book_update` can sweep any level that the incoming message did not
-    /// overwrite. See issue #6.
+    /// Mark phase of mark-and-sweep: zeros existing level sizes in place so that
+    /// `finish_ws_book_update` can drop any level the incoming message did not
+    /// overwrite. `values_mut` iterates stack-only — no allocation.
     pub(crate) fn begin_ws_book_update(&mut self, asset_id: &str, timestamp: u64) -> Result<bool> {
         if asset_id != self.token_id {
             return Err(PolyfillError::validation("Token ID mismatch"));
@@ -421,9 +420,6 @@ impl OrderBook {
         self.timestamp = chrono::DateTime::<Utc>::from_timestamp_millis(timestamp as i64)
             .unwrap_or_else(Utc::now);
 
-        // Mark phase: zero every existing value in place. Phase 2 (apply) overwrites
-        // survivors; phase 3 (sweep, in finish_ws_book_update) drops non-survivors.
-        // `values_mut` iterates stack-only — no allocation.
         for size in self.bids.values_mut() {
             *size = 0;
         }
@@ -470,119 +466,56 @@ impl OrderBook {
         self.trim_depth();
     }
 
-    /// Apply a full order-book snapshot from a WebSocket `book` event.
-    ///
-    /// **Semantics changed in 0.3.0:** previously upserted the supplied levels
-    /// (preserved levels omitted from the message — wrong). Now replaces the book:
-    /// levels omitted from the message are removed. Matches the actual wire
-    /// contract of Polymarket CLOB V2 `book` messages. See issue #6.
+    /// Apply a full order-book snapshot from a WebSocket `book` event. Replaces the
+    /// book: levels omitted from the message are removed, matching the wire contract
+    /// of Polymarket CLOB V2 `book` messages.
     ///
     /// If the apply loop errors mid-flight (invalid price/size, tick misalignment),
     /// the sweep and `trim_depth` phases still run so the book is left in a
-    /// consistent (possibly sparse) state rather than a zeroed-out one. The
-    /// sequence has already been advanced, so the next snapshot with a strictly
-    /// newer timestamp will fully repopulate the book.
+    /// consistent (possibly sparse) state rather than a zeroed-out one. The sequence
+    /// has already been advanced, so the next snapshot with a strictly newer
+    /// timestamp will fully repopulate the book.
     pub fn apply_book_update(&mut self, update: &BookUpdate) -> Result<()> {
-        if update.asset_id != self.token_id {
-            return Err(PolyfillError::validation("Token ID mismatch"));
-        }
-
-        if update.timestamp <= self.sequence {
-            return Ok(());
-        }
-
-        // Polymarket WSS `book` events in the docs example carry ascending-price
-        // levels on both sides. `trim_depth` below is order-agnostic so correctness
-        // does not depend on this, but a violation signals a server-side contract
-        // change worth catching early. Compiled out in release. The assert fires
-        // before any state mutation, so a panic here leaves the book unchanged.
+        // Assert ordering before any state mutation so a panic leaves the book unchanged.
+        // Order is not required for correctness (trim_depth is order-agnostic); a violation
+        // signals a server-side contract change worth catching in dev/CI.
         debug_assert!(
             update.bids.windows(2).all(|w| w[0].price <= w[1].price),
-            "CLOB `book` message: bids not in ascending price order. See polyfill2 issue #6.",
+            "CLOB `book` message: bids not in ascending price order",
         );
         debug_assert!(
             update.asks.windows(2).all(|w| w[0].price <= w[1].price),
-            "CLOB `book` message: asks not in ascending price order. See polyfill2 issue #6.",
+            "CLOB `book` message: asks not in ascending price order",
         );
 
-        self.sequence = update.timestamp;
-        self.timestamp = chrono::DateTime::<Utc>::from_timestamp_millis(update.timestamp as i64)
-            .unwrap_or_else(Utc::now);
-
-        // Mark phase — see begin_ws_book_update for the model.
-        for size in self.bids.values_mut() {
-            *size = 0;
-        }
-        for size in self.asks.values_mut() {
-            *size = 0;
+        if !self.begin_ws_book_update(&update.asset_id, update.timestamp)? {
+            return Ok(());
         }
 
-        // Apply phase — may error mid-flight. Capture the result so the sweep
-        // phase runs regardless.
         let apply_result = self.apply_snapshot_levels(&update.bids, &update.asks);
-
-        // Sweep phase — drop marked-but-not-overwritten levels and any wire-zero.
-        // Always runs, even if apply errored, to avoid leaving the book zeroed.
-        self.bids.retain(|_, size| *size != 0);
-        self.asks.retain(|_, size| *size != 0);
-
-        self.trim_depth();
+        self.finish_ws_book_update();
         apply_result
     }
 
-    /// Apply-phase helper: insert parsed bid/ask levels into the book.
-    ///
-    /// Extracted from `apply_book_update` so the caller can run the sweep phase
-    /// regardless of whether this returns `Ok` or `Err`.
-    ///
-    /// Zero-sized wire levels are handled in-place (removed if present, no-op
-    /// otherwise) rather than inserted and dropped by sweep — this avoids an
-    /// unnecessary alloc+dealloc cycle when the server sends a new price with
-    /// size 0 (which shouldn't happen in a snapshot per the wire contract, but
-    /// we handle it defensively).
+    /// Apply the bid and ask levels of a snapshot. The caller runs sweep (via
+    /// `finish_ws_book_update`) regardless of the result so a mid-flight error
+    /// does not leave the book zeroed. Delegates per-level to
+    /// `apply_ws_book_level_fast`, which handles tick alignment and treats
+    /// `size == 0` as a remove.
     fn apply_snapshot_levels(
         &mut self,
         bids: &[OrderSummary],
         asks: &[OrderSummary],
     ) -> Result<()> {
-        for level in bids {
-            let price_ticks = decimal_to_price(level.price)
-                .map_err(|_| PolyfillError::validation("Invalid price"))?;
-            let size_units = decimal_to_qty(level.size)
-                .map_err(|_| PolyfillError::validation("Invalid size"))?;
-
-            if let Some(tick_size_ticks) = self.tick_size_ticks {
-                if tick_size_ticks > 0 && !price_ticks.is_multiple_of(tick_size_ticks) {
-                    return Err(PolyfillError::validation("Price not aligned to tick size"));
-                }
-            }
-
-            if size_units == 0 {
-                self.bids.remove(&price_ticks);
-            } else {
-                self.bids.insert(price_ticks, size_units);
+        for (side, levels) in [(Side::BUY, bids), (Side::SELL, asks)] {
+            for level in levels {
+                let price_ticks = decimal_to_price(level.price)
+                    .map_err(|_| PolyfillError::validation("Invalid price"))?;
+                let size_units = decimal_to_qty(level.size)
+                    .map_err(|_| PolyfillError::validation("Invalid size"))?;
+                self.apply_ws_book_level_fast(side, price_ticks, size_units)?;
             }
         }
-
-        for level in asks {
-            let price_ticks = decimal_to_price(level.price)
-                .map_err(|_| PolyfillError::validation("Invalid price"))?;
-            let size_units = decimal_to_qty(level.size)
-                .map_err(|_| PolyfillError::validation("Invalid size"))?;
-
-            if let Some(tick_size_ticks) = self.tick_size_ticks {
-                if tick_size_ticks > 0 && !price_ticks.is_multiple_of(tick_size_ticks) {
-                    return Err(PolyfillError::validation("Price not aligned to tick size"));
-                }
-            }
-
-            if size_units == 0 {
-                self.asks.remove(&price_ticks);
-            } else {
-                self.asks.insert(price_ticks, size_units);
-            }
-        }
-
         Ok(())
     }
 
