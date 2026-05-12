@@ -5,6 +5,17 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0](https://github.com/onsails/polyfill2-rs/compare/v0.3.0...v0.4.0) - 2026-05-12
+
+### Added
+
+- *(orders)* [**breaking**] add price slippage protection to MarketOrderArgs ([#13](https://github.com/onsails/polyfill2-rs/pull/13))
+
+### Other
+
+- *(deps)* bump reqwest from 0.13.2 to 0.13.3 in the prod-deps group ([#9](https://github.com/onsails/polyfill2-rs/pull/9))
+- replace manual tag-triggered release with release-plz ([#8](https://github.com/onsails/polyfill2-rs/pull/8))
+
 ## [0.3.0] - 2026-04-23
 
 ### Breaking changes
