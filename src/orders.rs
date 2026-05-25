@@ -3,7 +3,7 @@
 //! This module handles the complex process of creating and signing orders
 //! for the Polymarket CLOB, including EIP-712 signature generation.
 
-use crate::auth::sign_order_message;
+use crate::auth::{sign_order_message, sign_poly_1271_order_message};
 use crate::client::OrderArgs;
 use crate::errors::{PolyfillError, Result};
 use crate::types::{
@@ -21,7 +21,7 @@ use std::sync::LazyLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Signature types for orders
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub enum SigType {
     /// ECDSA EIP712 signatures signed by EOAs
     Eoa = 0,
@@ -403,6 +403,14 @@ impl OrderBuilder {
         quote_id: String,
         owner: String,
     ) -> Result<RfqOrderExecutionRequest> {
+        // POLY_1271 (EIP-1271 smart wallets) is V2-only; the V1 RFQ path has
+        // no wrapping for ERC-1271 validation.
+        if self.sig_type == SigType::Poly1271 {
+            return Err(PolyfillError::validation(
+                "signature type POLY_1271 is not supported for V1 RFQ orders",
+            ));
+        }
+
         let tick_size = options
             .tick_size
             .ok_or_else(|| PolyfillError::validation("Cannot create V1 order without tick size"))?;
@@ -494,10 +502,20 @@ impl OrderBuilder {
             })?
             .as_millis() as u64;
 
+        // POLY_1271 orders are submitted by/for the smart-wallet itself, so the
+        // on-chain Order.signer field must be the wallet address (matched at
+        // settlement via isValidSignature); for every other SigType, the order
+        // is signed by an EOA and Order.signer is that EOA's address.
+        let order_signer = if self.sig_type == SigType::Poly1271 {
+            self.funder
+        } else {
+            self.signer.address()
+        };
+
         let order = crate::auth::Order {
             salt: U256::from(seed),
             maker: self.funder,
-            signer: self.signer.address(),
+            signer: order_signer,
             tokenId: u256_token_id,
             makerAmount: U256::from(maker_amount),
             takerAmount: U256::from(taker_amount),
@@ -508,12 +526,16 @@ impl OrderBuilder {
             builder: extras.builder,
         };
 
-        let signature = sign_order_message(&self.signer, order, chain_id, exchange)?;
+        let signature = if self.sig_type == SigType::Poly1271 {
+            sign_poly_1271_order_message(&self.signer, order, chain_id, exchange)?
+        } else {
+            sign_order_message(&self.signer, order, chain_id, exchange)?
+        };
 
         Ok(SignedOrderRequest {
             salt: seed,
             maker: self.funder.to_checksum(None),
-            signer: self.signer.address().to_checksum(None),
+            signer: order_signer.to_checksum(None),
             taker: "0x0000000000000000000000000000000000000000".to_string(),
             token_id,
             maker_amount: maker_amount.to_string(),
@@ -909,5 +931,152 @@ mod tests {
             )
             .unwrap_err();
         assert!(matches!(err_fok, PolyfillError::Order { .. }));
+    }
+
+    #[test]
+    fn test_poly_1271_order_sets_signer_to_funder() {
+        // SigType::Poly1271 must rewrite the on-chain Order.signer field to the
+        // funder (deposit wallet) so the V2 exchange dispatches signature
+        // validation to that wallet via ERC-1271 at settlement. EOA orders
+        // (the regression-test case below) must continue to pin signer to the
+        // EOA address.
+        use alloy_primitives::address;
+
+        let signer: PrivateKeySigner =
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                .parse()
+                .unwrap();
+        let deposit_wallet = address!("1111111111111111111111111111111111111111");
+
+        let builder = OrderBuilder::new(
+            signer.clone(),
+            Some(SigType::Poly1271),
+            Some(deposit_wallet),
+        );
+
+        let order = builder
+            .create_order(
+                137,
+                &OrderArgs {
+                    token_id: "1234".to_string(),
+                    price: Decimal::from_str("0.50").unwrap(),
+                    size: Decimal::from_str("100").unwrap(),
+                    side: Side::BUY,
+                },
+                0,
+                &ExtraOrderArgs::default(),
+                &OrderOptions {
+                    tick_size: Some(Decimal::from_str("0.01").unwrap()),
+                    neg_risk: Some(false),
+                    fee_rate_bps: None,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(order.signature_type, 3);
+        assert_eq!(
+            order.maker.to_lowercase(),
+            deposit_wallet.to_checksum(None).to_lowercase()
+        );
+        assert_eq!(
+            order.signer.to_lowercase(),
+            deposit_wallet.to_checksum(None).to_lowercase(),
+            "Order.signer must equal the deposit wallet (not the EOA) for POLY_1271",
+        );
+
+        // Spot-check the ERC-7739 wire-format trailer: last 2 bytes are
+        // uint16 BE length of "Order(...)" type-string = 186 (0x00ba).
+        assert!(order.signature.starts_with("0x"));
+        assert!(
+            order.signature.ends_with("00ba"),
+            "expected wire signature to end with 0x00ba (uint16 BE 186); got {}",
+            &order.signature[order.signature.len() - 8..]
+        );
+    }
+
+    #[test]
+    fn test_eoa_order_keeps_signer_as_eoa_after_poly_1271_branch() {
+        // Regression guard for the SigType branch in build_signed_order: an
+        // EOA-typed order must still pin Order.signer to the EOA address even
+        // when a non-EOA funder is supplied.
+        use alloy_primitives::address;
+
+        let signer: PrivateKeySigner =
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                .parse()
+                .unwrap();
+        let eoa_addr = signer.address().to_checksum(None);
+        let unrelated_funder = address!("2222222222222222222222222222222222222222");
+
+        let builder = OrderBuilder::new(signer, Some(SigType::Eoa), Some(unrelated_funder));
+
+        let order = builder
+            .create_order(
+                137,
+                &OrderArgs {
+                    token_id: "1".to_string(),
+                    price: Decimal::from_str("0.50").unwrap(),
+                    size: Decimal::from_str("100").unwrap(),
+                    side: Side::BUY,
+                },
+                0,
+                &ExtraOrderArgs::default(),
+                &OrderOptions {
+                    tick_size: Some(Decimal::from_str("0.01").unwrap()),
+                    neg_risk: Some(false),
+                    fee_rate_bps: None,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(order.signature_type, 0);
+        assert_eq!(
+            order.maker.to_lowercase(),
+            unrelated_funder.to_checksum(None).to_lowercase()
+        );
+        assert_eq!(order.signer.to_lowercase(), eoa_addr.to_lowercase());
+    }
+
+    #[test]
+    fn test_v1_rfq_rejects_poly_1271() {
+        // POLY_1271 is V2-only because the V1 RFQ pipeline has no ERC-1271
+        // wrapping.
+        use crate::types::ExtraOrderArgsV1;
+        use alloy_primitives::address;
+
+        let signer: PrivateKeySigner =
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                .parse()
+                .unwrap();
+        let deposit_wallet = address!("1111111111111111111111111111111111111111");
+        let builder = OrderBuilder::new(signer, Some(SigType::Poly1271), Some(deposit_wallet));
+
+        let err = builder
+            .build_v1_signed_rfq_payload(
+                137,
+                &OrderArgs {
+                    token_id: "1234".to_string(),
+                    price: Decimal::from_str("0.50").unwrap(),
+                    size: Decimal::from_str("100").unwrap(),
+                    side: Side::BUY,
+                },
+                0,
+                &ExtraOrderArgsV1 {
+                    taker: "0x0000000000000000000000000000000000000000".to_string(),
+                    nonce: U256::ZERO,
+                    fee_rate_bps: 0,
+                },
+                &OrderOptions {
+                    tick_size: Some(Decimal::from_str("0.01").unwrap()),
+                    neg_risk: Some(false),
+                    fee_rate_bps: None,
+                },
+                "req".to_string(),
+                "quote".to_string(),
+                "owner".to_string(),
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, PolyfillError::Validation { .. }));
     }
 }

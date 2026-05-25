@@ -5,10 +5,10 @@
 
 use crate::errors::{PolyfillError, Result};
 use crate::types::ApiCredentials;
-use alloy_primitives::{hex::encode_prefixed, Address, U256};
+use alloy_primitives::{hex::encode_prefixed, keccak256, Address, B256, U256};
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
-use alloy_sol_types::{eip712_domain, sol};
+use alloy_sol_types::{eip712_domain, sol, SolValue};
 use base64::engine::Engine;
 use hmac::{Hmac, KeyInit, Mac};
 use serde::Serialize;
@@ -136,6 +136,130 @@ pub fn sign_order_message(
         .map_err(|e| PolyfillError::crypto(format!("Order signature failed: {}", e)))?;
 
     Ok(encode_prefixed(signature.as_bytes()))
+}
+
+// ERC-7739 / Solady `TypedDataSign` wrapping constants for POLY_1271 orders.
+//
+// Single-line literals: the EIP-712 type-string must contain zero stray
+// whitespace, otherwise the resulting type-hash will not match the on-chain
+// contract.
+const POLY_1271_ORDER_TYPE_STRING: &str = "Order(uint256 salt,address maker,address signer,uint256 tokenId,uint256 makerAmount,uint256 takerAmount,uint8 side,uint8 signatureType,uint256 timestamp,bytes32 metadata,bytes32 builder)";
+
+const POLY_1271_SOLADY_TYPE_STRING: &str = "TypedDataSign(Order contents,string name,string version,uint256 chainId,address verifyingContract,bytes32 salt)Order(uint256 salt,address maker,address signer,uint256 tokenId,uint256 makerAmount,uint256 takerAmount,uint8 side,uint8 signatureType,uint256 timestamp,bytes32 metadata,bytes32 builder)";
+
+const POLY_1271_DOMAIN_TYPE_STRING: &str =
+    "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
+
+/// Sign an order using the ERC-7739 / Solady `TypedDataSign` envelope required
+/// for POLY_1271 (EIP-1271 smart-wallet) orders.
+///
+/// The CTF Exchange V2 contract dispatches signature validation to the smart
+/// wallet's `isValidSignature(...)` via ERC-1271 when `signatureType == 3`.
+/// The smart wallet expects an ERC-7739 nested payload so that the controlling
+/// EOA's wallet UI can show the underlying order, not an opaque hash.
+///
+/// Wire layout:
+///
+///   inner_sig (65 B) ‖ app_domain_separator (32 B) ‖ contents_hash (32 B)
+///                    ‖ contents_type_string (UTF-8) ‖ contents_type_len (uint16 BE)
+///
+/// Both `Order.maker` and `Order.signer` on the wire must be the smart-wallet
+/// (deposit-wallet) address; the inner ECDSA signature is still produced by
+/// the EOA private key that owns the wallet.
+pub fn sign_poly_1271_order_message(
+    signer: &PrivateKeySigner,
+    order: Order,
+    chain_id: u64,
+    verifying_contract: Address,
+) -> Result<String> {
+    // App-side EIP-712 domain separator (Polymarket CTF Exchange V2).
+    let domain_typehash = keccak256(POLY_1271_DOMAIN_TYPE_STRING.as_bytes());
+    let app_name_hash = keccak256(b"Polymarket CTF Exchange");
+    let app_version_hash = keccak256(b"2");
+    let app_domain_separator = keccak256(
+        (
+            domain_typehash,
+            app_name_hash,
+            app_version_hash,
+            U256::from(chain_id),
+            verifying_contract,
+        )
+            .abi_encode_sequence(),
+    );
+
+    // Order struct hash — the "contents" inside the TypedDataSign envelope.
+    // `uint8` and `uint256` share an identical ABI encoding (32-byte
+    // left-padded big-endian), so the `u8` order fields are promoted here to
+    // keep the tuple inside `SolValue`'s blanket impl.
+    let order_typehash = keccak256(POLY_1271_ORDER_TYPE_STRING.as_bytes());
+    let contents_hash = keccak256(
+        (
+            order_typehash,
+            order.salt,
+            order.maker,
+            order.signer,
+            order.tokenId,
+            order.makerAmount,
+            order.takerAmount,
+            U256::from(order.side),
+            U256::from(order.signatureType),
+            order.timestamp,
+            order.metadata,
+            order.builder,
+        )
+            .abi_encode_sequence(),
+    );
+
+    // Outer TypedDataSign struct hash, anchored to the DepositWallet domain.
+    // `order.signer` here is the smart-wallet address (the verifyingContract
+    // of the nested DepositWallet domain).
+    let solady_typehash = keccak256(POLY_1271_SOLADY_TYPE_STRING.as_bytes());
+    let dw_name_hash = keccak256(b"DepositWallet");
+    let dw_version_hash = keccak256(b"1");
+    let typed_data_sign_struct_hash = keccak256(
+        (
+            solady_typehash,
+            contents_hash,
+            dw_name_hash,
+            dw_version_hash,
+            U256::from(chain_id),
+            order.signer,
+            B256::ZERO,
+        )
+            .abi_encode_sequence(),
+    );
+
+    // EIP-712 digest is computed against the CTF Exchange V2 app domain —
+    // not the DepositWallet domain, which only appears nested inside the
+    // TypedDataSign struct hash above.
+    let mut digest_preimage = [0u8; 66];
+    digest_preimage[0] = 0x19;
+    digest_preimage[1] = 0x01;
+    digest_preimage[2..34].copy_from_slice(app_domain_separator.as_slice());
+    digest_preimage[34..66].copy_from_slice(typed_data_sign_struct_hash.as_slice());
+    let digest = keccak256(digest_preimage);
+
+    // Inner ECDSA signature produced by the controlling EOA over the raw
+    // digest (no EIP-191 prefix). The smart wallet recovers the EOA and
+    // checks ownership via isValidSignature.
+    let inner_sig = signer
+        .sign_hash_sync(&digest)
+        .map_err(|e| PolyfillError::crypto(format!("POLY_1271 inner signature failed: {}", e)))?;
+    let inner_sig_bytes = inner_sig.as_bytes();
+
+    let contents_type_bytes = POLY_1271_ORDER_TYPE_STRING.as_bytes();
+    let contents_type_len =
+        u16::try_from(contents_type_bytes.len()).expect("Order type string fits in u16");
+
+    let mut out =
+        Vec::with_capacity(inner_sig_bytes.len() + 32 + 32 + contents_type_bytes.len() + 2);
+    out.extend_from_slice(&inner_sig_bytes);
+    out.extend_from_slice(app_domain_separator.as_slice());
+    out.extend_from_slice(contents_hash.as_slice());
+    out.extend_from_slice(contents_type_bytes);
+    out.extend_from_slice(&contents_type_len.to_be_bytes());
+
+    Ok(encode_prefixed(&out))
 }
 
 /// Sign V1 order message using EIP-712 (RFQ accept/approve path only).
@@ -454,6 +578,55 @@ mod tests {
         };
 
         assert_eq!(dummy.eip712_type_hash(), expected);
+    }
+
+    /// Byte-for-byte parity with a deterministic POLY_1271 wire signature.
+    /// Any deviation in the ERC-7739 / Solady TypedDataSign wrapping (type
+    /// strings, domain separator, contents hash, digest, or the wire-format
+    /// concatenation) will surface here.
+    #[test]
+    fn sign_poly_1271_order_matches_reference_fixture() {
+        use alloy_primitives::{address, B256};
+        use std::str::FromStr;
+
+        // Anvil/Hardhat dev account #0. Public test key; do not reuse on mainnet.
+        let private_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+        let signer: PrivateKeySigner = private_key.parse().expect("valid private key");
+
+        let chain_id: u64 = 80002; // Amoy
+        let verifying_contract = address!("E111180000d2663C0091e4f400237545B87B996B");
+        let deposit_wallet = address!("1111111111111111111111111111111111111111");
+
+        let order = Order {
+            salt: U256::from_str("479249096354").unwrap(),
+            maker: deposit_wallet,
+            signer: deposit_wallet,
+            tokenId: U256::from(1234u64),
+            makerAmount: U256::from(100_000_000u64),
+            takerAmount: U256::from(50_000_000u64),
+            side: 0, // BUY
+            signatureType: 3,
+            timestamp: U256::from(1_710_000_000_000u64),
+            metadata: B256::ZERO,
+            builder: B256::ZERO,
+        };
+
+        let actual =
+            sign_poly_1271_order_message(&signer, order, chain_id, verifying_contract).unwrap();
+
+        let expected = concat!(
+            "0xa3a093c83b6c20c83355c16ce94c92e6e9fcbdeb840618cc74f6c57a42ad145b",
+            "2b98db73d2c73cbf1f2b6af288566ae81960ddbc3a13921027358a8bff3be6ff1c",
+            "a440cbd865bc0c6243d7a8df9a8bf48a8827b0a4abbb61c30e96d305423af148",
+            "d23d42d3ad94e65d78258cecaf8dcbaddac0f73dc085040f2c12bb595dd83804",
+            "4f726465722875696e743235362073616c742c61646472657373206d616b65722c",
+            "61646472657373207369676e65722c75696e7432353620746f6b656e49642c75",
+            "696e74323536206d616b6572416d6f756e742c75696e743235362074616b6572",
+            "416d6f756e742c75696e743820736964652c75696e7438207369676e61747572",
+            "65547970652c75696e743235362074696d657374616d702c6279746573333220",
+            "6d657461646174612c62797465733332206275696c6465722900ba",
+        );
+        assert_eq!(actual, expected);
     }
 
     #[test]
