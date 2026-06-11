@@ -5,6 +5,25 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0](https://github.com/onsails/polyfill2-rs/compare/v0.3.0...v0.4.0) - 2026-06-03
+
+### Added
+
+- *(orders)* support POLY_1271 (EIP-1271) deposit wallets ([#19](https://github.com/onsails/polyfill2-rs/pull/19))
+- *(orders)* [**breaking**] add price slippage protection to MarketOrderArgs ([#13](https://github.com/onsails/polyfill2-rs/pull/13))
+
+### Fixed
+
+- *(stream)* send V2 PING heartbeat every 10s on WebSocket ([#16](https://github.com/onsails/polyfill2-rs/pull/16))
+
+### Other
+
+- *(deps)* bump uuid from 1.23.1 to 1.23.2 in the prod-deps group ([#21](https://github.com/onsails/polyfill2-rs/pull/21))
+- *(deps)* bump the prod-deps group across 1 directory with 2 updates ([#20](https://github.com/onsails/polyfill2-rs/pull/20))
+- *(deps)* bump the prod-deps group across 1 directory with 3 updates ([#12](https://github.com/onsails/polyfill2-rs/pull/12))
+- *(deps)* bump reqwest from 0.13.2 to 0.13.3 in the prod-deps group ([#9](https://github.com/onsails/polyfill2-rs/pull/9))
+- replace manual tag-triggered release with release-plz ([#8](https://github.com/onsails/polyfill2-rs/pull/8))
+
 ## [0.3.0] - 2026-04-23
 
 ### Breaking changes
