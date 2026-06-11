@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0](https://github.com/onsails/polyfill2-rs/compare/v0.4.0...v0.5.0) - 2026-06-11
+
+### Other
+
+- *(deps)* [**breaking**] bump alloy-signer and alloy-signer-local to 2.0 ([#24](https://github.com/onsails/polyfill2-rs/pull/24)) — `alloy_signer_local::PrivateKeySigner` appears in the public API (`OrderBuilder::new`, `auth::create_l1_headers`), so downstream callers must move to alloy-signer-local 2.x. Signing behavior is unchanged (byte-exact EIP-712 fixtures pass).
+- *(deps)* bump the prod-deps group with 2 updates ([#23](https://github.com/onsails/polyfill2-rs/pull/23))
+
 ## [0.4.0](https://github.com/onsails/polyfill2-rs/compare/v0.3.0...v0.4.0) - 2026-06-03
 
 ### Added
